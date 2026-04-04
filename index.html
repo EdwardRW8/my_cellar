@@ -377,7 +377,11 @@ function AddWineModal({ onClose, onAdd, occupiedSlots }) {
               <div><label style={lbl}>Vintage</label><input style={inp} type="number" value={vintage} onChange={e=>setVintage(e.target.value)} placeholder="2018"/></div>
               <div>
                 <label style={lbl}>No. of Bottles</label>
-                <input style={inp} type="number" min="1" max="48" value={qty} onChange={e=>setQty(Math.max(1,parseInt(e.target.value)||1))}/>
+                <div style={{display:"flex",alignItems:"center",gap:0,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,overflow:"hidden"}}>
+                  <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={{width:40,height:42,background:"rgba(255,255,255,0.06)",border:"none",color:"#d4c4a0",fontSize:20,cursor:"pointer",flexShrink:0,fontFamily:"Montserrat"}}>−</button>
+                  <div style={{flex:1,textAlign:"center",fontFamily:"Cormorant Garamond",fontSize:20,color:"#d4c4a0",padding:"10px 0",userSelect:"none"}}>{qty}</div>
+                  <button onClick={()=>setQty(q=>Math.min(48,q+1))} style={{width:40,height:42,background:"rgba(255,255,255,0.06)",border:"none",color:"#d4c4a0",fontSize:20,cursor:"pointer",flexShrink:0,fontFamily:"Montserrat"}}>+</button>
+                </div>
               </div>
               <div style={{gridColumn:"1/-1"}}><label style={lbl}>Grape(s) *</label><input style={inp} value={grape} onChange={e=>setGrape(e.target.value)} placeholder="e.g. Cabernet Sauvignon"/></div>
               <div>
