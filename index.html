@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="theme-color" content="#080503"/>
+  <title>The Cellar</title>
+  <style>
+    #root { min-height: 100vh; }
+    body { margin: 0; background: #080503; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,600&family=Montserrat:wght@300;400;500;600&display=swap');`;
+
+// ── Rack Layout ───────────────────────────────────────────────────────────────
+const RACK_COLS   = 13;
+const COL_HEIGHTS = Array.from({ length: RACK_COLS }, (_, i) => 4 + i); // [4..16]
+const TOTAL_SLOTS = COL_HEIGHTS.reduce((a, b) => a + b, 0); // 130
+const MAX_ROWS    = 16;
+
+const currentYear = new Date().getFullYear();
+const isInWindow  = (w) => w.drinkFrom <= currentYear && currentYear <= w.drinkUntil;
+const isTooYoung  = (w) => currentYear < w.drinkFrom;
+const genId       = () => Date.now() + Math.random();
+
+const COLOUR_MAP  = { Red:"#8B2635", White:"#C9A84C", Sparkling:"#B8A96A", Dessert:"#A07820", Rosé:"#C87890" };
+const colourFor   = (c) => COLOUR_MAP[c] || "#7a6a5a";
+
+// ── Password ──────────────────────────────────────────────────────────────────
+const CELLAR_PASSWORD = "cellar2024"; // ← change this to your own password
+
+// ── Pairing Database ──────────────────────────────────────────────────────────
+// Each entry: { foods: [...searchable terms], grapes: [...], colours: [...], notes: "..." }
+const PAIRINGS = [
+  { foods:["beef","steak","ribeye","sirloin","fillet","roast beef","beef tenderloin","beef wellington"], grapes:["Cabernet Sauvignon","Merlot","Malbec","Tempranillo","Syrah","Shiraz"], colours:["Red"], notes:"Full-bodied reds with firm tannins cut through the richness of beef. Cabernet Sauvignon is the classic match." },
+  { foods:["lamb","roast lamb","lamb chops","lamb shank","rack of lamb"], grapes:["Cabernet Sauvignon","Tempranillo","Grenache","Syrah","Merlot"], colours:["Red"], notes:"Lamb's sweetness pairs beautifully with earthy, structured reds. Bordeaux-style blends are a perfect match." },
+  { foods:["duck","roast duck","duck breast","duck confit","duck leg"], grapes:["Pinot Noir","Grenache","Merlot","Sangiovese"], colours:["Red"], notes:"Duck's richness needs a wine with enough fruit and acidity to balance. Pinot Noir is a natural companion." },
+  { foods:["venison","game","pheasant","partridge","grouse","wild boar"], grapes:["Pinot Noir","Syrah","Nebbiolo","Tempranillo"], colours:["Red"], notes:"Gamey meats need wines with earthy complexity. Aged Burgundy or Northern Rhône Syrah work brilliantly." },
+  { foods:["pork","roast pork","pork belly","pork chop","pulled pork","ham"], grapes:["Pinot Noir","Chardonnay","Grenache","Riesling"], colours:["Red","White"], notes:"Pork is versatile — lighter reds like Pinot Noir or an off-dry Riesling both complement it well." },
+  { foods:["chicken","roast chicken","chicken breast","roast bird","poultry"], grapes:["Chardonnay","Pinot Noir","Viognier","Grenache"], colours:["White","Red"], notes:"Roast chicken suits both worlds — a rich Burgundy Chardonnay or a lighter red like Pinot Noir." },
+  { foods:["salmon","smoked salmon","salmon fillet","gravlax"], grapes:["Pinot Noir","Chardonnay","Viognier","Riesling"], colours:["White","Red"], notes:"Salmon's oily richness suits creamy whites or a delicate Pinot Noir. Avoid tannic reds." },
+  { foods:["lobster","lobster thermidor","lobster bisque","crayfish"], grapes:["Chardonnay","Viognier","Riesling"], colours:["White","Sparkling"], notes:"Lobster demands a rich, opulent white. A great Burgundy Chardonnay or Champagne is the definitive pairing." },
+  { foods:["scallops","pan-seared scallops","seared scallops","scallop"], grapes:["Chardonnay","Viognier","Sauvignon Blanc","Pinot Gris"], colours:["White","Sparkling"], notes:"Scallops need crisp acidity or buttery richness. Premier Cru Chablis or a fine Condrieu are superb." },
+  { foods:["oysters","oyster"], grapes:["Chardonnay","Riesling","Sauvignon Blanc"], colours:["White","Sparkling"], notes:"Oysters and Champagne or Chablis is one of gastronomy's great pairings — the minerality is key." },
+  { foods:["sea bass","grilled sea bass","pan-fried sea bass","fish"], grapes:["Chardonnay","Viognier","Sauvignon Blanc","Riesling","Pinot Gris"], colours:["White"], notes:"Delicate white fish needs an equally refined white. Avoid anything too oaky or tannic." },
+  { foods:["tuna","seared tuna","tuna steak"], grapes:["Pinot Noir","Chardonnay","Rosé"], colours:["Red","White","Rosé"], notes:"Seared tuna is meaty enough for a light Pinot Noir, but a full-bodied white also works beautifully." },
+  { foods:["pasta","truffle pasta","pasta truffle","carbonara","pappardelle","tagliatelle","spaghetti"], grapes:["Nebbiolo","Sangiovese","Chardonnay","Pinot Noir"], colours:["Red","White"], notes:"Truffle pasta is elevated by Barolo or Barbaresco. Cream-based pastas suit a rich Burgundy Chardonnay." },
+  { foods:["risotto","mushroom risotto","truffle risotto"], grapes:["Chardonnay","Nebbiolo","Pinot Noir","Sangiovese"], colours:["White","Red"], notes:"A creamy risotto suits a textured white Burgundy. Mushroom versions match beautifully with earthy reds." },
+  { foods:["pizza","tomato","tomato sauce","margherita"], grapes:["Sangiovese","Grenache","Barbera"], colours:["Red"], notes:"Pizza's acidity and richness needs a high-acid red. Italian varieties like Sangiovese are made for it." },
+  { foods:["cheese","aged cheese","cheese board","charcuterie","cheese platter"], grapes:["Cabernet Sauvignon","Pinot Noir","Sémillon","Chardonnay","Riesling"], colours:["Red","White","Dessert"], notes:"Cheese is endlessly versatile. Soft cheeses suit whites; hard aged cheeses love a tannic red; blue cheese and Sauternes is legendary." },
+  { foods:["blue cheese","stilton","roquefort","gorgonzola"], grapes:["Sémillon","Riesling"], colours:["Dessert","White"], notes:"Blue cheese and sweet wine is one of wine's great paradoxes — the salt and sugar interplay is extraordinary. Sauternes is the definitive match." },
+  { foods:["foie gras","foie","pâté"], grapes:["Sémillon","Riesling","Chardonnay"], colours:["Dessert","White","Sparkling"], notes:"Foie gras and Sauternes is a classic pairing of Bordeaux's great sweet wine with its most indulgent dish." },
+  { foods:["chocolate","dark chocolate","chocolate fondant","chocolate dessert","chocolate tart"], grapes:["Shiraz","Merlot","Cabernet Sauvignon","Grenache"], colours:["Red","Dessert"], notes:"Dark chocolate needs a wine with equal intensity. A rich Shiraz or Merlot with dark fruit notes works beautifully." },
+  { foods:["dessert","tart","pudding","crème brûlée","panna cotta","tiramisu"], grapes:["Sémillon","Riesling","Muscat","Viognier"], colours:["Dessert","Sparkling"], notes:"Sweet desserts need sweeter wines or you'll make both taste flat. Match intensity with intensity." },
+  { foods:["aperitif","aperitivo","starter","canapé","nibbles","pre-dinner"], grapes:["Chardonnay","Pinot Noir","Viognier","Riesling"], colours:["Sparkling","White","Rosé"], notes:"Champagne or a crisp white is the perfect aperitif — palate-cleansing and celebratory." },
+  { foods:["celebration","birthday","anniversary","toast","toasting","party","special occasion"], grapes:["Pinot Noir","Chardonnay","Pinot Noir blend"], colours:["Sparkling"], notes:"Nothing marks a celebration like great Champagne. A prestige cuvée is the definitive choice." },
+  { foods:["spicy food","spicy","curry","indian","thai","asian"], grapes:["Riesling","Viognier","Gewürztraminer"], colours:["White"], notes:"Spice calls for an off-dry or aromatic white with low alcohol — high tannin reds will fight the heat." },
+  { foods:["sushi","sashimi","japanese","miso"], grapes:["Chardonnay","Riesling","Pinot Noir"], colours:["White","Sparkling"], notes:"Japanese cuisine's delicacy suits crisp, mineral whites or Champagne — both echo the umami of the sea." },
+  { foods:["vegetarian","vegetables","roasted vegetables","mushroom","mushrooms","lentils"], grapes:["Pinot Noir","Chardonnay","Sangiovese","Nebbiolo"], colours:["Red","White"], notes:"Vegetable dishes need wines that match their earthiness or freshness rather than overwhelm them." },
+];
+
+// ── Wine-specific pairing reasoning ──────────────────────────────────────────
+// For each food+wine combination, generate a specific tasting note explanation
+function wineSpecificNote(wine, pairing) {
+  const n = wine.name;
+  const g = wine.grape.toLowerCase();
+  const v = wine.vintage ? `${wine.vintage}` : null;
+  const vStr = v ? ` ${v}` : "";
+  const inWin = isInWindow(wine);
+  const windowNote = inWin
+    ? "currently at its peak"
+    : isTooYoung(wine)
+    ? `will be at its best from ${wine.drinkFrom}`
+    : "past its peak window but still drinking";
+
+  // Cabernet Sauvignon
+  if (g.includes("cabernet sauvignon")) {
+    if (pairing.foods.some(f=>["beef","steak","lamb","venison","game"].some(m=>f.includes(m))))
+      return `${n}${vStr}'s firm tannins and dark fruit will cut through the richness beautifully — ${windowNote}.`;
+    if (pairing.foods.some(f=>f.includes("cheese")))
+      return `${n}${vStr}'s structure holds up well against aged hard cheeses — ${windowNote}.`;
+    return `${n}${vStr}'s depth and structure make it a fine companion here — ${windowNote}.`;
+  }
+  // Pinot Noir
+  if (g.includes("pinot noir")) {
+    if (pairing.foods.some(f=>["duck","salmon","tuna","mushroom"].some(m=>f.includes(m))))
+      return `${n}${vStr}'s silky texture and red fruit are ideal — its delicacy won't overpower the dish — ${windowNote}.`;
+    if (pairing.foods.some(f=>f.includes("truffle")))
+      return `${n}${vStr}'s earthy complexity makes it a natural with truffle — ${windowNote}.`;
+    return `${n}${vStr}'s elegance and bright acidity lift the flavours here — ${windowNote}.`;
+  }
+  // Chardonnay
+  if (g.includes("chardonnay")) {
+    if (pairing.foods.some(f=>["lobster","scallop","crab","oyster"].some(m=>f.includes(m))))
+      return `${n}${vStr}'s richness and toasty depth are a classic match for shellfish — ${windowNote}.`;
+    if (pairing.foods.some(f=>["chicken","pork","pasta"].some(m=>f.includes(m))))
+      return `${n}${vStr}'s creamy texture complements the dish's weight perfectly — ${windowNote}.`;
+    return `${n}${vStr}'s balance of richness and acidity works well here — ${windowNote}.`;
+  }
+  // Nebbiolo / Barolo / Barbaresco
+  if (g.includes("nebbiolo")) {
+    if (pairing.foods.some(f=>["truffle","pasta","risotto","beef","lamb"].some(m=>f.includes(m))))
+      return `${n}${vStr}'s tar and roses complexity with firm tannins is made for this dish — ${windowNote}.`;
+    return `${n}${vStr}'s powerful structure and earthy depth elevate this pairing — ${windowNote}.`;
+  }
+  // Sangiovese
+  if (g.includes("sangiovese")) {
+    if (pairing.foods.some(f=>["pasta","pizza","tomato","lamb","beef"].some(m=>f.includes(m))))
+      return `${n}${vStr}'s bright acidity and cherry fruit are a natural partner — ${windowNote}.`;
+    return `${n}${vStr}'s vivid fruit and savoury edge work beautifully here — ${windowNote}.`;
+  }
+  // Syrah / Shiraz
+  if (g.includes("syrah")||g.includes("shiraz")) {
+    if (pairing.foods.some(f=>["lamb","beef","venison","game","duck"].some(m=>f.includes(m))))
+      return `${n}${vStr}'s peppery intensity and dark fruit are a magnificent match — ${windowNote}.`;
+    if (pairing.foods.some(f=>f.includes("chocolate")))
+      return `${n}${vStr}'s dark fruit and spice echo the bitterness of dark chocolate superbly — ${windowNote}.`;
+    return `${n}${vStr}'s power and depth make a compelling pairing here — ${windowNote}.`;
+  }
+  // Tempranillo
+  if (g.includes("tempranillo")) {
+    return `${n}${vStr}'s earthy red fruit and leather complexity suit this dish well — ${windowNote}.`;
+  }
+  // Merlot
+  if (g.includes("merlot")) {
+    return `${n}${vStr}'s plush texture and gentle tannins make it a welcoming match — ${windowNote}.`;
+  }
+  // Viognier
+  if (g.includes("viognier")) {
+    if (pairing.foods.some(f=>["scallop","lobster","salmon","sea bass","fish"].some(m=>f.includes(m))))
+      return `${n}${vStr}'s floral apricot richness is a beautiful match for delicate seafood — ${windowNote}.`;
+    return `${n}${vStr}'s aromatic generosity lifts this dish — ${windowNote}.`;
+  }
+  // Riesling / Sémillon dessert
+  if (g.includes("riesling")||g.includes("sémillon")||g.includes("semillon")) {
+    if (pairing.colours.includes("Dessert"))
+      return `${n}${vStr}'s honeyed intensity and balancing acidity make it extraordinary with this dish — ${windowNote}.`;
+    if (pairing.foods.some(f=>["spicy","curry","asian","thai"].some(m=>f.includes(m))))
+      return `${n}${vStr}'s aromatic lift and touch of sweetness tames spice beautifully — ${windowNote}.`;
+    return `${n}${vStr}'s precision and mineral edge bring focus to this pairing — ${windowNote}.`;
+  }
+  // Sparkling / Champagne
+  if (wine.colour==="Sparkling") {
+    if (pairing.foods.some(f=>["oyster","lobster","scallop","sushi","celebration","aperitif"].some(m=>f.includes(m))))
+      return `${n}${vStr}'s fine bubbles and crisp acidity are simply perfect here — ${windowNote}.`;
+    return `${n}${vStr}'s effervescence and freshness make it an uplifting match — ${windowNote}.`;
+  }
+  // Generic fallback
+  return `${n}${vStr} makes a compelling choice for this dish — ${windowNote}.`;
+}
+
+// ── Score each wine for a pairing (higher = better match) ────────────────────
+function scoredPairingWines(wines, pairing) {
+  return wines
+    .map(w => {
+      let score = 0;
+      const g = w.grape.toLowerCase();
+      // Grape match (best signal)
+      if (pairing.grapes.some(pg => g.includes(pg.toLowerCase()) || pg.toLowerCase().includes(g.split(" ")[0]))) score += 40;
+      // Colour match
+      if (pairing.colours.includes(w.colour)) score += 10;
+      // In drinking window bonus
+      if (isInWindow(w)) score += 25;
+      // Soon to be ready bonus
+      else if (isTooYoung(w) && w.drinkFrom - currentYear <= 2) score += 8;
+      // Value/quality signal — higher value wines score slightly better
+      if (w.value >= 500) score += 6;
+      else if (w.value >= 150) score += 3;
+      return { wine: w, score };
+    })
+    .filter(x => x.score >= 10) // must have some relevance
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5) // top 5 matches
+    .map(x => x.wine);
+}
+
+function searchPairings(query, wines) {
+  if (!query.trim()) return [];
+  const q = query.toLowerCase();
+  const matched = PAIRINGS.filter(p =>
+    p.foods.some(f => f.includes(q) || q.includes(f.split(" ")[0]))
+  );
+  if (!matched.length) return [];
+  return matched.map(p => {
+    const matchedWines = scoredPairingWines(wines, p);
+    return { ...p, matchedWines };
+  });
+}
+
+// ── Sample data (empty — ready for your collection) ───────────────────────────
+const SAMPLE_WINES = [];
+
+// ── localStorage helpers ──────────────────────────────────────────────────────
+const LS_WINES    = "cellar_wines";
+const LS_CONSUMED = "cellar_consumed";
+
+function loadWines()    { try { const s=localStorage.getItem(LS_WINES);    return s?JSON.parse(s):SAMPLE_WINES; } catch{ return SAMPLE_WINES; } }
+function loadConsumed() { try { const s=localStorage.getItem(LS_CONSUMED); return s?JSON.parse(s):[]; }          catch{ return []; } }
+function saveWines(w)    { try { localStorage.setItem(LS_WINES,    JSON.stringify(w)); } catch{} }
+function saveConsumed(c) { try { localStorage.setItem(LS_CONSUMED, JSON.stringify(c)); } catch{} }
+
+// ── Stars ─────────────────────────────────────────────────────────────────────
+function Stars({ value, onChange, size=30 }) {
+  const [hov, setHov] = useState(0);
+  return (
+    <div style={{display:"flex",gap:4}}>
+      {[1,2,3,4,5].map(s=>(
+        <span key={s} onClick={()=>onChange&&onChange(s)}
+          onMouseEnter={()=>onChange&&setHov(s)} onMouseLeave={()=>setHov(0)}
+          style={{fontSize:size,cursor:onChange?"pointer":"default",color:s<=(hov||value)?"#d4a843":"#221508",transition:"color 0.12s",userSelect:"none"}}>★</span>
+      ))}
+    </div>
+  );
+}
+
+// ── Password Gate ─────────────────────────────────────────────────────────────
+function PasswordGate({ onUnlock }) {
+  const [input, setInput] = useState("");
+  const [error, setError] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  useEffect(() => { if (sessionStorage.getItem("cellar_auth")==="1") onUnlock(); }, []);
+
+  const attempt = () => {
+    if (input === CELLAR_PASSWORD) { sessionStorage.setItem("cellar_auth","1"); onUnlock(); }
+    else { setError(true); setShake(true); setInput(""); setTimeout(()=>setShake(false),600); }
+  };
+
+  return (
+    <>
+      <style>{`${FONTS}*{box-sizing:border-box;margin:0;padding:0}html,body{background:#080503;height:100%;-webkit-font-smoothing:antialiased}@keyframes shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-8px)}30%{transform:translateX(8px)}45%{transform:translateX(-5px)}60%{transform:translateX(5px)}75%{transform:translateX(-3px)}90%{transform:translateX(3px)}}@keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <div style={{minHeight:"100vh",background:"#080503",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+        <div style={{position:"fixed",inset:0,backgroundImage:"radial-gradient(circle at 30% 40%,rgba(139,94,44,0.07) 0%,transparent 60%)",pointerEvents:"none"}}/>
+        <div style={{width:"min(360px,100%)",animation:"fadeIn 0.6s ease"}}>
+          <div style={{textAlign:"center",marginBottom:36}}>
+            <div style={{fontSize:50,marginBottom:10,filter:"drop-shadow(0 0 18px rgba(212,168,67,0.3))"}}>🍷</div>
+            <h1 style={{fontFamily:"Cormorant Garamond",fontSize:40,fontWeight:300,fontStyle:"italic",color:"#f0e8d8",letterSpacing:-0.5}}>The Cellar</h1>
+            <p style={{fontFamily:"Montserrat",fontSize:8,color:"#2a1a0e",letterSpacing:4,textTransform:"uppercase",marginTop:6}}>Private Collection</p>
+          </div>
+          <div style={{background:"linear-gradient(160deg,#140d06,#0d0805)",border:"1px solid rgba(212,168,67,0.15)",borderRadius:16,padding:"26px 22px",animation:shake?"shake 0.6s ease":undefined}}>
+            <label style={{fontFamily:"Montserrat",fontSize:8,color:"#4a3a2a",letterSpacing:2,textTransform:"uppercase",display:"block",marginBottom:9}}>Passcode</label>
+            <input type="password" value={input} onChange={e=>{setInput(e.target.value);setError(false);}} onKeyDown={e=>e.key==="Enter"&&attempt()} placeholder="••••••••" autoFocus
+              style={{width:"100%",background:"rgba(255,255,255,0.04)",border:`1px solid ${error?"rgba(239,68,68,0.5)":"rgba(255,255,255,0.1)"}`,borderRadius:10,padding:"13px 15px",color:"#d4c4a0",fontFamily:"Cormorant Garamond",fontSize:22,letterSpacing:6,outline:"none",marginBottom:error?7:14,transition:"border-color 0.2s"}}/>
+            {error&&<p style={{fontFamily:"Montserrat",fontSize:8,color:"#ef4444",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Incorrect passcode</p>}
+            <button onClick={attempt} style={{width:"100%",background:"linear-gradient(135deg,#8B5E2C,#d4a843)",border:"none",borderRadius:10,padding:"14px",color:"#0d0805",fontFamily:"Montserrat",fontSize:9,letterSpacing:3,textTransform:"uppercase",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 18px rgba(212,168,67,0.2)"}}>Enter Cellar</button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Helper: find next N free rack slots ──────────────────────────────────────
+function findFreeSlots(n, occupiedSlots) {
+  const slots = [];
+  // Work left to right, bottom to top within each column
+  for (let ci = 0; ci < RACK_COLS && slots.length < n; ci++) {
+    const colNum = ci + 1;
+    const colH   = COL_HEIGHTS[ci];
+    for (let row = 1; row <= colH && slots.length < n; row++) {
+      if (!occupiedSlots[`${colNum}-${row}`]) {
+        slots.push({ col: colNum, row });
+      }
+    }
+  }
+  return slots;
+}
+
+// ── Add Wine Modal — two-step with bulk locations ─────────────────────────────
+function AddWineModal({ onClose, onAdd, occupiedSlots }) {
+  const inp = {width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"11px 13px",color:"#d4c4a0",fontFamily:"Cormorant Garamond",fontSize:16,outline:"none"};
+  const sel = {...inp,fontFamily:"Montserrat",fontSize:10,cursor:"pointer",padding:"10px 11px"};
+  const lbl = {fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1.5,textTransform:"uppercase",display:"block",marginBottom:5};
+
+  // ── Step 1 state: wine details ────────────────────────────────────────────
+  const [step, setStep]         = useState(1);
+  const [name, setName]         = useState("");
+  const [producer, setProducer] = useState("");
+  const [grape, setGrape]       = useState("");
+  const [colour, setColour]     = useState("Red");
+  const [vintage, setVintage]   = useState("");
+  const [value, setValue]       = useState("");
+  const [drinkFrom, setDrinkFrom] = useState("");
+  const [drinkUntil, setDrinkUntil] = useState("");
+  const [qty, setQty]           = useState(1);
+  const [location, setLocation] = useState("rack");
+  const [store, setStore]       = useState("Berry Bros & Rudd");
+  const [caseSize, setCaseSize] = useState("case");
+
+  // ── Step 2 state: per-bottle locations ───────────────────────────────────
+  // Array of {col, row} for rack bottles — pre-filled with auto-suggestions
+  const [bottleSlots, setBottleSlots] = useState([]);
+
+  const canStep1 = name && producer && grape && value && drinkFrom && drinkUntil;
+
+  const goToStep2 = () => {
+    if (!canStep1) return;
+    if (location === "rack") {
+      const n     = parseInt(qty) || 1;
+      const auto  = findFreeSlots(n, occupiedSlots);
+      // Fill remaining with empty if rack doesn't have enough space
+      const slots = Array.from({ length: n }, (_, i) => auto[i] || { col: "", row: "" });
+      setBottleSlots(slots);
+    }
+    setStep(2);
+  };
+
+  // Update a single bottle's col or row
+  const setSlot = (i, field, val) => {
+    setBottleSlots(prev => prev.map((s, idx) => idx === i ? { ...s, [field]: val, ...(field==="col" ? {row:""} : {}) } : s));
+  };
+
+  // Are all rack slots filled?
+  const allSlotsValid = location !== "rack" || bottleSlots.every(s => s.col && s.row);
+
+  // Track which slots are "taken" including the ones already assigned in this session
+  const allOccupied = { ...occupiedSlots };
+  bottleSlots.forEach((s, i) => { if (s.col && s.row) allOccupied[`${s.col}-${s.row}`] = `session-${i}`; });
+
+  const handleAdd = () => {
+    if (!allSlotsValid) return;
+    const base = {
+      name, producer, grape, colour,
+      vintage: vintage ? parseInt(vintage) : null,
+      value:   parseFloat(value),
+      drinkFrom: parseInt(drinkFrom),
+      drinkUntil: parseInt(drinkUntil),
+    };
+    if (location === "rack") {
+      // Add one wine record per bottle
+      bottleSlots.forEach(s => {
+        onAdd({ ...base, id: genId(), rack: true, floor: false, col: parseInt(s.col), row: parseInt(s.row), store: null, caseSize: null, qty: 1 });
+      });
+    } else if (location === "store") {
+      onAdd({ ...base, id: genId(), rack: false, floor: false, col: null, row: null, store, caseSize: null, qty: parseInt(qty) || 1 });
+    } else {
+      // floor — single record representing the case
+      onAdd({ ...base, id: genId(), rack: false, floor: true, col: null, row: null, store: null, caseSize, qty: caseSize === "half" ? 6 : 12 });
+    }
+    onClose();
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(14px)"}} onClick={onClose}>
+      <div style={{background:"linear-gradient(160deg,#140d06,#0d0805)",border:"1px solid rgba(212,168,67,0.2)",borderRadius:18,padding:24,width:"min(480px,96vw)",maxHeight:"94vh",overflowY:"auto",position:"relative"}} onClick={e=>e.stopPropagation()}>
+        <button onClick={onClose} style={{position:"absolute",top:14,right:16,background:"none",border:"none",color:"#4a3a2a",cursor:"pointer",fontSize:22}}>✕</button>
+
+        {/* Step indicators */}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:18}}>
+          {["Wine Details","Locations"].map((s,i)=>(
+            <React.Fragment key={s}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <div style={{width:22,height:22,borderRadius:"50%",background:step>i?"#d4a843":step===i+1?"#d4a843":"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Montserrat",fontSize:9,color:step>=i+1?"#0d0805":"#4a3a2a",fontWeight:600}}>{i+1}</div>
+                <span style={{fontFamily:"Montserrat",fontSize:8,color:step===i+1?"#d4a843":"#3a2a1a",letterSpacing:1,textTransform:"uppercase"}}>{s}</span>
+              </div>
+              {i<1&&<div style={{flex:1,height:1,background:"rgba(255,255,255,0.08)"}}/>}
+            </React.Fragment>
+          ))}
+        </div>
+
+        {/* ── STEP 1: wine details ── */}
+        {step===1&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div style={{gridColumn:"1/-1"}}><label style={lbl}>Wine Name *</label><input style={inp} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Château Margaux" autoFocus/></div>
+              <div style={{gridColumn:"1/-1"}}><label style={lbl}>Producer *</label><input style={inp} value={producer} onChange={e=>setProducer(e.target.value)} placeholder="e.g. Château Margaux"/></div>
+              <div><label style={lbl}>Vintage</label><input style={inp} type="number" value={vintage} onChange={e=>setVintage(e.target.value)} placeholder="2018"/></div>
+              <div>
+                <label style={lbl}>No. of Bottles</label>
+                <input style={inp} type="number" min="1" max="48" value={qty} onChange={e=>setQty(Math.max(1,parseInt(e.target.value)||1))}/>
+              </div>
+              <div style={{gridColumn:"1/-1"}}><label style={lbl}>Grape(s) *</label><input style={inp} value={grape} onChange={e=>setGrape(e.target.value)} placeholder="e.g. Cabernet Sauvignon"/></div>
+              <div>
+                <label style={lbl}>Colour</label>
+                <select style={sel} value={colour} onChange={e=>setColour(e.target.value)}>
+                  {["Red","White","Sparkling","Rosé","Dessert"].map(c=><option key={c} style={{background:"#140d06"}}>{c}</option>)}
+                </select>
+              </div>
+              <div><label style={lbl}>Value £ *</label><input style={inp} type="number" value={value} onChange={e=>setValue(e.target.value)} placeholder="150"/></div>
+              <div><label style={lbl}>Drink From *</label><input style={inp} type="number" value={drinkFrom} onChange={e=>setDrinkFrom(e.target.value)} placeholder="2024"/></div>
+              <div><label style={lbl}>Drink Until *</label><input style={inp} type="number" value={drinkUntil} onChange={e=>setDrinkUntil(e.target.value)} placeholder="2040"/></div>
+            </div>
+
+            <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
+
+            {/* Location type */}
+            <div>
+              <label style={{...lbl,marginBottom:8}}>Where are these bottles?</label>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7}}>
+                {[["rack","🍷 Rack"],["store","🏢 Store"],["floor","📦 Floor"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>setLocation(v)}
+                    style={{padding:"10px 6px",background:location===v?"rgba(212,168,67,0.12)":"rgba(255,255,255,0.03)",border:`1px solid ${location===v?"rgba(212,168,67,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:8,color:location===v?"#d4a843":"#5a4a3a",fontFamily:"Montserrat",fontSize:8,letterSpacing:1,textTransform:"uppercase",cursor:"pointer"}}>{l}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Store/floor options immediately on step 1 — only rack needs step 2 */}
+            {location==="store"&&(
+              <div>
+                <label style={lbl}>Storage facility</label>
+                <select style={sel} value={store} onChange={e=>setStore(e.target.value)}>
+                  {["Berry Bros & Rudd","The Wine Society"].map(s=><option key={s} style={{background:"#140d06"}}>{s}</option>)}
+                </select>
+              </div>
+            )}
+            {location==="floor"&&(
+              <div>
+                <label style={lbl}>Case size</label>
+                <div style={{display:"flex",gap:8}}>
+                  {[["case","Full case (12)"],["half","Half case (6)"]].map(([v,l])=>(
+                    <button key={v} onClick={()=>setCaseSize(v)}
+                      style={{flex:1,padding:"10px",background:caseSize===v?"rgba(212,168,67,0.12)":"rgba(255,255,255,0.03)",border:`1px solid ${caseSize===v?"rgba(212,168,67,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:8,color:caseSize===v?"#d4a843":"#5a4a3a",fontFamily:"Montserrat",fontSize:8,letterSpacing:1,textTransform:"uppercase",cursor:"pointer"}}>{l}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button onClick={location==="rack"?goToStep2:handleAdd} disabled={!canStep1}
+              style={{marginTop:4,background:canStep1?"linear-gradient(135deg,#8B5E2C,#d4a843)":"rgba(255,255,255,0.04)",border:"none",borderRadius:9,padding:"13px",color:canStep1?"#0d0805":"#3a2a1a",fontFamily:"Montserrat",fontSize:9,letterSpacing:2,textTransform:"uppercase",cursor:canStep1?"pointer":"default",fontWeight:600}}>
+              {location==="rack"&&parseInt(qty)>1 ? `Assign ${qty} Rack Positions →` : location==="rack" ? "Assign Rack Position →" : "Add to Cellar ✓"}
+            </button>
+          </div>
+        )}
+
+        {/* ── STEP 2: per-bottle rack positions ── */}
+        {step===2&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{padding:"10px 14px",background:"rgba(212,168,67,0.07)",border:"1px solid rgba(212,168,67,0.15)",borderRadius:8}}>
+              <div style={{fontFamily:"Cormorant Garamond",fontSize:17,fontStyle:"italic",color:"#f0e8d8"}}>{name}{vintage?` ${vintage}`:""}</div>
+              <div style={{fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>{producer} · {bottleSlots.length} bottle{bottleSlots.length!==1?"s":""}</div>
+            </div>
+
+            <p style={{fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1,textTransform:"uppercase"}}>Slots auto-filled with free spaces — adjust any if needed</p>
+
+            <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"50vh",overflowY:"auto",paddingRight:4}}>
+              {bottleSlots.map((slot, i) => {
+                const colH    = slot.col ? COL_HEIGHTS[parseInt(slot.col)-1] : 0;
+                // Free rows for this slot: exclude global occupied AND other session slots except this one
+                const otherSession = {};
+                bottleSlots.forEach((s,j)=>{ if(j!==i&&s.col&&s.row) otherSession[`${s.col}-${s.row}`]=true; });
+                const freeR = slot.col
+                  ? Array.from({length:colH},(_,r)=>r+1).filter(r=>!occupiedSlots[`${slot.col}-${r}`]&&!otherSession[`${slot.col}-${r+1-1}`]&&!otherSession[`${slot.col}-${r}`])
+                  : [];
+
+                return (
+                  <div key={i} style={{display:"grid",gridTemplateColumns:"28px 1fr 1fr",gap:8,alignItems:"center"}}>
+                    <div style={{fontFamily:"Montserrat",fontSize:10,color:"#5a4a3a",textAlign:"center",background:"rgba(255,255,255,0.04)",borderRadius:6,padding:"6px 0",fontWeight:600}}>{i+1}</div>
+                    <select value={slot.col} onChange={e=>setSlot(i,"col",e.target.value)} style={{...sel,fontSize:9}}>
+                      <option value="" style={{background:"#140d06"}}>Column</option>
+                      {COL_HEIGHTS.map((h,ci)=>{
+                        const cn=ci+1;
+                        // Count free rows excluding other session slots
+                        const fr=Array.from({length:h},(_,r)=>r+1).filter(r=>!occupiedSlots[`${cn}-${r}`]&&!otherSession[`${cn}-${r}`]).length;
+                        return <option key={cn} value={cn} style={{background:"#140d06"}}>Col {cn} ({fr} free)</option>;
+                      })}
+                    </select>
+                    <select value={slot.row} onChange={e=>setSlot(i,"row",e.target.value)} disabled={!slot.col} style={{...sel,fontSize:9,opacity:slot.col?1:0.4}}>
+                      <option value="" style={{background:"#140d06"}}>Row</option>
+                      {freeR.map(r=><option key={r} value={r} style={{background:"#140d06"}}>Row {r}</option>)}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+
+            {!allSlotsValid&&<p style={{fontFamily:"Montserrat",fontSize:8,color:"#ef4444",letterSpacing:1}}>Please assign a column and row for every bottle.</p>}
+
+            <div style={{display:"flex",gap:8,marginTop:4}}>
+              <button onClick={()=>setStep(1)} style={{flex:1,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"12px",color:"#6a5a4a",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer"}}>← Back</button>
+              <button onClick={handleAdd} disabled={!allSlotsValid}
+                style={{flex:2,background:allSlotsValid?"linear-gradient(135deg,#8B5E2C,#d4a843)":"rgba(255,255,255,0.04)",border:"none",borderRadius:9,padding:"12px",color:allSlotsValid?"#0d0805":"#3a2a1a",fontFamily:"Montserrat",fontSize:9,letterSpacing:2,textTransform:"uppercase",cursor:allSlotsValid?"pointer":"default",fontWeight:600}}>
+                Add {bottleSlots.length} Bottle{bottleSlots.length!==1?"s":""} ✓
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Consume Modal ─────────────────────────────────────────────────────────────
+function ConsumeModal({ wine, onClose, onConfirm }) {
+  const [rating, setRating] = useState(0);
+  const [notes,  setNotes]  = useState("");
+  const [date,   setDate]   = useState(new Date().toISOString().split("T")[0]);
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.9)",zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(14px)"}} onClick={onClose}>
+      <div style={{background:"linear-gradient(160deg,#140d06,#0d0805)",border:"1px solid rgba(212,168,67,0.18)",borderRadius:18,padding:30,width:"min(420px,95vw)",position:"relative"}} onClick={e=>e.stopPropagation()}>
+        <button onClick={onClose} style={{position:"absolute",top:14,right:16,background:"none",border:"none",color:"#4a3a2a",cursor:"pointer",fontSize:22}}>✕</button>
+        <p style={{fontFamily:"Montserrat",fontSize:8,color:"#4a3a2a",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Consumed</p>
+        <h2 style={{fontFamily:"Cormorant Garamond",fontSize:24,fontStyle:"italic",color:"#f0e8d8",fontWeight:400,marginBottom:2}}>{wine.name}</h2>
+        <p style={{fontFamily:"Montserrat",fontSize:9,color:"#5a4a3a",marginBottom:20}}>{wine.producer}{wine.vintage?` · ${wine.vintage}`:""}</p>
+        <div style={{marginBottom:18}}>
+          <p style={{fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1.5,textTransform:"uppercase",marginBottom:9}}>Rating</p>
+          <Stars value={rating} onChange={setRating} size={32}/>
+          {rating>0&&<p style={{fontFamily:"Cormorant Garamond",fontSize:14,fontStyle:"italic",color:"#7a6a5a",marginTop:5}}>{["","Disappointing","Decent","Very Good","Excellent","Exceptional"][rating]}</p>}
+        </div>
+        <div style={{marginBottom:13}}>
+          <p style={{fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1.5,textTransform:"uppercase",marginBottom:6}}>Tasting Notes</p>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Describe what you experienced…" rows={3}
+            style={{width:"100%",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 13px",color:"#c0b090",fontFamily:"Cormorant Garamond",fontSize:15,fontStyle:"italic",outline:"none",resize:"vertical"}}/>
+        </div>
+        <div style={{marginBottom:20}}>
+          <p style={{fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1.5,textTransform:"uppercase",marginBottom:6}}>Date</p>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+            style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"9px 13px",color:"#c0b090",fontFamily:"Montserrat",fontSize:11,outline:"none",colorScheme:"dark"}}/>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose} style={{flex:1,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:9,padding:"12px",color:"#5a4a3a",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>onConfirm({rating,notes,date})} style={{flex:2,background:"linear-gradient(135deg,#5a1010,#8B2635)",border:"none",borderRadius:9,padding:"12px",color:"#f0d0d0",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontWeight:600}}>🍷 Mark Consumed</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Move Wine Modal ───────────────────────────────────────────────────────────
+function MoveModal({ wine, onClose, onMove, occupiedSlots }) {
+  const [location, setLocation] = useState(wine.rack?"store":wine.floor?"rack":"rack");
+  const [store,    setStore]    = useState(wine.store||"Berry Bros & Rudd");
+  const [col,      setCol]      = useState("");
+  const [row,      setRow]      = useState("");
+  const [caseSize, setCaseSize] = useState("case"); // "case"=12, "half"=6
+
+  const colHeight = col ? COL_HEIGHTS[parseInt(col)-1] : 0;
+  const freeRows  = col ? Array.from({length:colHeight},(_,i)=>i+1).filter(r=>!occupiedSlots[`${col}-${r}`]) : [];
+
+  const canMove = location==="rack"?(col&&row):location==="store"?store:true;
+
+  const doMove = () => {
+    if (!canMove) return;
+    const updates = {
+      rack:  location==="rack",
+      floor: location==="floor",
+      col:   location==="rack"?parseInt(col):null,
+      row:   location==="rack"?parseInt(row):null,
+      store: location==="store"?store:null,
+      caseSize: location==="floor"?caseSize:null,
+    };
+    onMove(wine.id, updates);
+    onClose();
+  };
+
+  const sel = {width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"10px 11px",color:"#c0b090",fontFamily:"Montserrat",fontSize:10,outline:"none",cursor:"pointer"};
+  const lbl = {fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1.5,textTransform:"uppercase",display:"block",marginBottom:5};
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:4000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(14px)"}} onClick={onClose}>
+      <div style={{background:"linear-gradient(160deg,#140d06,#0d0805)",border:"1px solid rgba(212,168,67,0.2)",borderRadius:18,padding:26,width:"min(440px,95vw)",position:"relative"}} onClick={e=>e.stopPropagation()}>
+        <button onClick={onClose} style={{position:"absolute",top:14,right:16,background:"none",border:"none",color:"#4a3a2a",cursor:"pointer",fontSize:20}}>✕</button>
+        <p style={{fontFamily:"Montserrat",fontSize:8,color:"#4a3a2a",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Move bottle</p>
+        <h2 style={{fontFamily:"Cormorant Garamond",fontSize:22,fontStyle:"italic",color:"#f0e8d8",fontWeight:400,marginBottom:18}}>{wine.name}{wine.vintage?` ${wine.vintage}`:""}</h2>
+
+        {/* Location buttons */}
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Move to</label>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7}}>
+            {[["rack","🍷 Rack"],["store","🏢 Store"],["floor","📦 Floor"]].map(([v,l])=>(
+              <button key={v} onClick={()=>{setLocation(v);setCol("");setRow("");}}
+                style={{padding:"10px 6px",background:location===v?"rgba(212,168,67,0.12)":"rgba(255,255,255,0.03)",border:`1px solid ${location===v?"rgba(212,168,67,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:8,color:location===v?"#d4a843":"#5a4a3a",fontFamily:"Montserrat",fontSize:8,letterSpacing:1,textTransform:"uppercase",cursor:"pointer"}}>{l}</button>
+            ))}
+          </div>
+        </div>
+
+        {location==="rack" && (
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            <div><label style={lbl}>Column (1=left, 13=right)</label>
+              <select style={sel} value={col} onChange={e=>{setCol(e.target.value);setRow("");}}>
+                <option value="" style={{background:"#140d06"}}>Select column</option>
+                {COL_HEIGHTS.map((h,i)=>{const cn=i+1;const fr=Array.from({length:h},(_,r)=>r+1).filter(r=>!occupiedSlots[`${cn}-${r}`]).length;return <option key={cn} value={cn} style={{background:"#140d06"}}>Col {cn} — {fr}/{h} free</option>;})}
+              </select>
+            </div>
+            <div><label style={lbl}>Row</label>
+              <select style={{...sel,opacity:col?1:0.4}} value={row} onChange={e=>setRow(e.target.value)} disabled={!col}>
+                <option value="" style={{background:"#140d06"}}>Select row</option>
+                {freeRows.map(r=><option key={r} value={r} style={{background:"#140d06"}}>Row {r}</option>)}
+              </select>
+            </div>
+            {col&&freeRows.length===0&&<div style={{gridColumn:"1/-1",padding:"7px 10px",background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.15)",borderRadius:7,fontFamily:"Montserrat",fontSize:8,color:"#ef4444"}}>Column full.</div>}
+          </div>
+        )}
+
+        {location==="store" && (
+          <div style={{marginBottom:14}}>
+            <label style={lbl}>Storage facility</label>
+            <select style={sel} value={store} onChange={e=>setStore(e.target.value)}>
+              {["Berry Bros & Rudd","The Wine Society"].map(s=><option key={s} style={{background:"#140d06"}}>{s}</option>)}
+            </select>
+          </div>
+        )}
+
+        {location==="floor" && (
+          <div style={{marginBottom:14}}>
+            <label style={lbl}>Case size</label>
+            <div style={{display:"flex",gap:8}}>
+              {[["case","Full case (12)"],["half","Half case (6)"]].map(([v,l])=>(
+                <button key={v} onClick={()=>setCaseSize(v)}
+                  style={{flex:1,padding:"10px",background:caseSize===v?"rgba(212,168,67,0.12)":"rgba(255,255,255,0.03)",border:`1px solid ${caseSize===v?"rgba(212,168,67,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:8,color:caseSize===v?"#d4a843":"#5a4a3a",fontFamily:"Montserrat",fontSize:8,letterSpacing:1,textTransform:"uppercase",cursor:"pointer"}}>{l}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onClose} style={{flex:1,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"12px",color:"#6a5a4a",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer"}}>Cancel</button>
+          <button onClick={doMove} disabled={!canMove}
+            style={{flex:2,background:canMove?"linear-gradient(135deg,#8B5E2C,#d4a843)":"rgba(255,255,255,0.04)",border:"none",borderRadius:9,padding:"12px",color:canMove?"#0d0805":"#3a2a1a",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:canMove?"pointer":"default",fontWeight:600}}>
+            Move ✓
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Remove (non-consumed) confirm modal ───────────────────────────────────────
+function RemoveModal({ wine, onClose, onRemove }) {
+  const [reason, setReason] = useState("gift");
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:4000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(14px)"}} onClick={onClose}>
+      <div style={{background:"linear-gradient(160deg,#140d06,#0d0805)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:18,padding:26,width:"min(400px,95vw)",position:"relative"}} onClick={e=>e.stopPropagation()}>
+        <button onClick={onClose} style={{position:"absolute",top:14,right:16,background:"none",border:"none",color:"#4a3a2a",cursor:"pointer",fontSize:20}}>✕</button>
+        <p style={{fontFamily:"Montserrat",fontSize:8,color:"#4a3a2a",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Remove bottle</p>
+        <h2 style={{fontFamily:"Cormorant Garamond",fontSize:22,fontStyle:"italic",color:"#f0e8d8",fontWeight:400,marginBottom:18}}>{wine.name}{wine.vintage?` ${wine.vintage}`:""}</h2>
+        <p style={{fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1.5,textTransform:"uppercase",marginBottom:10}}>Reason for removal</p>
+        <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:20}}>
+          {[["gift","Given as a gift"],["sold","Sold"],["lost","Lost / broken"],["other","Other"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setReason(v)}
+              style={{padding:"11px 14px",textAlign:"left",background:reason===v?"rgba(212,168,67,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${reason===v?"rgba(212,168,67,0.35)":"rgba(255,255,255,0.07)"}`,borderRadius:8,color:reason===v?"#d4a843":"#6a5a4a",fontFamily:"Cormorant Garamond",fontSize:16,fontStyle:"italic",cursor:"pointer"}}>{l}</button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onClose} style={{flex:1,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"12px",color:"#6a5a4a",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>{onRemove(wine.id,reason);onClose();}}
+            style={{flex:2,background:"rgba(60,20,10,0.8)",border:"1px solid rgba(139,38,53,0.4)",borderRadius:9,padding:"12px",color:"#c06070",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontWeight:600}}>
+            Remove from Cellar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Wine Detail Modal ─────────────────────────────────────────────────────────
+function WineDetail({ wine, onClose, onConsume, onMove, onRemove }) {
+  const [showMove,   setShowMove]   = useState(false);
+  const [showRemove, setShowRemove] = useState(false);
+
+  // need to pass occupiedSlots down — derive from parent via prop
+  const inW = isInWindow(wine), toY = isTooYoung(wine);
+  const pct = Math.max(0,Math.min(100,((currentYear-wine.drinkFrom)/Math.max(1,wine.drinkUntil-wine.drinkFrom))*100));
+
+  const locationLabel = wine.rack
+    ? `Rack — Col ${wine.col}, Row ${wine.row}`
+    : wine.floor
+    ? `Floor — ${wine.caseSize==="half"?"Half case (6)":"Full case (12)"}`
+    : wine.store;
+
+  return (
+    <>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",zIndex:1500,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(8px)"}} onClick={onClose}>
+      <div style={{background:"linear-gradient(160deg,#140d06,#0d0805)",border:"1px solid rgba(212,168,67,0.2)",borderRadius:18,padding:26,maxWidth:440,width:"92%",position:"relative",maxHeight:"92vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+        <button onClick={onClose} style={{position:"absolute",top:14,right:16,background:"none",border:"none",color:"#4a3a2a",cursor:"pointer",fontSize:20}}>✕</button>
+        <div style={{display:"flex",gap:12,marginBottom:16,alignItems:"flex-start"}}>
+          <div style={{width:4,height:50,background:colourFor(wine.colour),borderRadius:2,flexShrink:0,marginTop:4}}/>
+          <div>
+            <h2 style={{fontFamily:"Cormorant Garamond",fontSize:23,color:"#f0e8d8",fontStyle:"italic",fontWeight:400,lineHeight:1.2}}>{wine.name}</h2>
+            <p style={{fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:2,textTransform:"uppercase",marginTop:3}}>{wine.producer}{wine.vintage?` · ${wine.vintage}`:""}</p>
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:12}}>
+          {[["Grape",wine.grape],["Colour",wine.colour],["Value",`£${wine.value.toLocaleString()}`],["Bottles",wine.floor?(wine.caseSize==="half"?6:12):wine.qty],["Drink from",wine.drinkFrom],["Drink until",wine.drinkUntil],["Location",locationLabel]].map(([k,v])=>(
+            <div key={k} style={{borderBottom:"1px solid rgba(255,255,255,0.05)",paddingBottom:7}}>
+              <div style={{fontFamily:"Montserrat",fontSize:7,color:"#3a2a1a",textTransform:"uppercase",letterSpacing:1.5}}>{k}</div>
+              <div style={{fontFamily:"Cormorant Garamond",fontSize:14,color:"#b0a070",marginTop:2}}>{v}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginBottom:12}}>
+          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:4,height:5,overflow:"hidden",marginBottom:4}}>
+            <div style={{height:"100%",width:`${pct}%`,background:inW?"linear-gradient(90deg,#4ade80,#22c55e)":toY?"#f59e0b":"#ef4444",borderRadius:4}}/>
+          </div>
+          <div style={{fontFamily:"Montserrat",fontSize:8,color:inW?"#4ade80":toY?"#f59e0b":"#ef4444"}}>
+            {inW?"In drinking window":toY?`Not ready — ${wine.drinkFrom-currentYear} yr(s)`:"Past peak"}
+          </div>
+        </div>
+
+        <div style={{padding:"9px 13px",background:"rgba(212,168,67,0.06)",borderRadius:8,border:"1px solid rgba(212,168,67,0.1)",marginBottom:14}}>
+          <div style={{fontFamily:"Cormorant Garamond",fontSize:16,color:"#d4a843"}}>Total: £{(wine.value*(wine.floor?(wine.caseSize==="half"?6:12):wine.qty)).toLocaleString()}</div>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <button onClick={()=>{onClose();onConsume(wine);}}
+            style={{width:"100%",background:"linear-gradient(135deg,#4a1010,#8B2635)",border:"none",borderRadius:10,padding:"12px",color:"#f0d0d0",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontWeight:600}}>
+            🍷 I Consumed This Wine
+          </button>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setShowMove(true)}
+              style={{flex:1,background:"rgba(212,168,67,0.08)",border:"1px solid rgba(212,168,67,0.2)",borderRadius:10,padding:"11px",color:"#d4a843",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontWeight:600}}>
+              ↔ Move
+            </button>
+            <button onClick={()=>setShowRemove(true)}
+              style={{flex:1,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"11px",color:"#6a5a4a",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer"}}>
+              ✕ Remove
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    {showMove   && <MoveModal   wine={wine} onClose={()=>setShowMove(false)}   onMove={onMove}     occupiedSlots={wine._occupiedSlots||{}}/>}
+    {showRemove && <RemoveModal wine={wine} onClose={()=>setShowRemove(false)} onRemove={onRemove}/>}
+    </>
+  );
+}
+
+// ── 3D Staircase Rack ─────────────────────────────────────────────────────────
+function WineRack({ wines, onSelect, selectedWine }) {
+  const containerRef = useRef(null);
+  const [cw,  setCw]  = useState(500);
+  const [rotY,setRotY]= useState(-14);
+  const [rotX,setRotX]= useState(12);
+  const [drag,setDrag]= useState(false);
+  const lastRef = useRef(null);
+
+  useEffect(()=>{
+    const el=containerRef.current; if(!el)return;
+    const obs=new ResizeObserver(e=>setCw(e[0].contentRect.width));
+    obs.observe(el); setCw(el.clientWidth); return()=>obs.disconnect();
+  },[]);
+
+  const occupied={};
+  wines.filter(w=>w.rack&&w.col&&w.row).forEach(w=>{occupied[`${w.col}-${w.row}`]=w;});
+
+  const onMD=(e)=>{setDrag(true);lastRef.current={x:e.clientX,y:e.clientY};e.preventDefault();};
+  const onMM=useCallback((e)=>{
+    if(!drag||!lastRef.current)return;
+    const dx=e.clientX-lastRef.current.x,dy=e.clientY-lastRef.current.y;
+    setRotY(r=>Math.max(-55,Math.min(55,r+dx*0.3)));
+    setRotX(r=>Math.max(-18,Math.min(32,r-dy*0.2)));
+    lastRef.current={x:e.clientX,y:e.clientY};
+  },[drag]);
+  const onMU=()=>{setDrag(false);lastRef.current=null;};
+  useEffect(()=>{window.addEventListener("mousemove",onMM);window.addEventListener("mouseup",onMU);return()=>{window.removeEventListener("mousemove",onMM);window.removeEventListener("mouseup",onMU);};},[onMM]);
+
+  const cellW=Math.max(20,Math.min(38,Math.floor((cw-8)/RACK_COLS)));
+  const cellH=Math.max(15,Math.floor(cellW*0.7));
+  const depth=Math.floor(cellW*1.8);
+  const rackW=RACK_COLS*cellW, rackH=MAX_ROWS*cellH;
+  const vpH=rackH+depth+24;
+
+  return (
+    <div ref={containerRef} style={{width:"100%",display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
+      <p style={{color:"#3a2a1a",fontSize:9,fontFamily:"Montserrat",letterSpacing:2,textTransform:"uppercase"}}>Drag to rotate · tap a bottle</p>
+      <div style={{width:"100%",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",height:vpH}}>
+        <div onMouseDown={onMD} style={{cursor:drag?"grabbing":"grab",perspective:1000,width:rackW+depth+20,height:vpH,display:"flex",alignItems:"center",justifyContent:"center",userSelect:"none",flexShrink:0}}>
+          <div style={{transformStyle:"preserve-3d",transform:`rotateX(${rotX}deg) rotateY(${rotY}deg)`,transition:drag?"none":"transform 0.07s ease",position:"relative",width:rackW,height:rackH}}>
+            <div style={{position:"absolute",width:rackW,height:rackH,background:"linear-gradient(135deg,#190e06,#2c1809)",border:"1px solid #4a2c12",borderRadius:3,transform:`translateZ(-${depth}px)`}}/>
+            <div style={{position:"absolute",bottom:0,left:0,width:rackW,height:depth,background:"linear-gradient(180deg,#2c1809,#1a0d05)",transformOrigin:"bottom center",transform:`rotateX(90deg)`}}/>
+            <div style={{position:"absolute",top:0,left:0,width:depth,height:rackH,background:"linear-gradient(90deg,#1a0d05,#2c1809)",transformOrigin:"left center",transform:`rotateY(-90deg)`}}/>
+            {Array.from({length:RACK_COLS+1}).map((_,c)=>(
+              <div key={c} style={{position:"absolute",left:c*cellW,top:0,width:2,height:rackH,background:"linear-gradient(180deg,#7a4020,#3a1808)",transform:"translateZ(1px)",opacity:0.6}}/>
+            ))}
+            {COL_HEIGHTS.map((colH,ci)=>{
+              const colTop=(MAX_ROWS-colH)*cellH, emptyH=(MAX_ROWS-colH)*cellH;
+              const chamfer=Math.round(cellH*0.45);
+              const topClip=`polygon(${chamfer}px 0%,100% 0%,100% 100%,0% 100%,0% ${chamfer}px)`;
+              return (
+                <React.Fragment key={ci}>
+                  {emptyH>0&&<div style={{position:"absolute",left:ci*cellW+1,top:0,width:cellW-2,height:emptyH,background:"linear-gradient(180deg,#120904,#1c0e06)",transform:"translateZ(2px)",opacity:0.96}}/>}
+                  {Array.from({length:colH+1}).map((_,ri)=>(
+                    <div key={ri} style={{position:"absolute",left:ci*cellW,top:colTop+ri*cellH,width:cellW,height:ri===0?Math.max(3,chamfer):2,background:"linear-gradient(90deg,#8a4822,#3c1a08)",transform:"translateZ(2px)",opacity:0.7,clipPath:ri===0?topClip:undefined}}/>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+            {COL_HEIGHTS.map((colH,ci)=>{
+              const colNum=ci+1, colTop=(MAX_ROWS-colH)*cellH;
+              return Array.from({length:colH}).map((_,ri)=>{
+                const row=ri+1, wine=occupied[`${colNum}-${row}`];
+                const isSel=selectedWine?.id===wine?.id;
+                const inWin=wine&&isInWindow(wine), young=wine&&isTooYoung(wine);
+                const bx=ci*cellW+2, by=colTop+ri*cellH+2, bw=cellW-4, bh=cellH-4;
+                const isTop=ri===0;
+                const chamfer=Math.round(bh*0.45);
+                const clip=isTop?`polygon(${chamfer}px 0%,100% 0%,100% 100%,0% 100%,0% ${chamfer}px)`:undefined;
+                return (
+                  <div key={`${ci}-${ri}`} onClick={e=>{e.stopPropagation();if(wine)onSelect(wine);}}
+                    style={{position:"absolute",left:bx,top:by,width:bw,height:bh,transform:"translateZ(3px)",cursor:wine?"pointer":"default",clipPath:clip}}>
+                    {wine?(
+                      <div style={{width:"100%",height:"100%",borderRadius:isTop?0:2,background:`linear-gradient(120deg,${colourFor(wine.colour)}bb,${colourFor(wine.colour)}55)`,border:isSel?`1px solid #e8d5a0`:`1px solid ${colourFor(wine.colour)}55`,boxShadow:isSel?`0 0 8px ${colourFor(wine.colour)}88`:`0 1px 4px rgba(0,0,0,0.5)`,display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden",transition:"all 0.14s"}}>
+                        <div style={{width:"30%",height:"72%",background:"rgba(255,255,255,0.08)",borderRadius:"50% 50% 25% 25%"}}/>
+                        <div style={{position:"absolute",top:2,right:2,width:Math.max(3,cellW*0.1),height:Math.max(3,cellW*0.1),borderRadius:"50%",background:inWin?"#4ade80":young?"#f59e0b":"#ef4444",boxShadow:`0 0 3px ${inWin?"#4ade80":young?"#f59e0b":"#ef4444"}`}}/>
+                      </div>
+                    ):(
+                      <div style={{width:"100%",height:"100%",borderRadius:2,background:"rgba(255,255,255,0.01)",border:"1px solid rgba(255,255,255,0.03)"}}/>
+                    )}
+                  </div>
+                );
+              });
+            })}
+          </div>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:14,fontFamily:"Montserrat",fontSize:8,color:"#3a2a1a",letterSpacing:1,textTransform:"uppercase"}}>
+        {[["#4ade80","In window"],["#f59e0b","Too young"],["#ef4444","Past peak"]].map(([c,l])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
+            <div style={{width:5,height:5,borderRadius:"50%",background:c,boxShadow:`0 0 4px ${c}`}}/>{l}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Wine Card ─────────────────────────────────────────────────────────────────
+function WineCard({ wine, onClick, onConsume }) {
+  const inW=isInWindow(wine), toY=isTooYoung(wine);
+  return (
+    <div style={{background:"linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"11px 13px",cursor:"pointer",transition:"all 0.17s",position:"relative",overflow:"hidden",display:"flex",alignItems:"center",gap:10}}
+      onClick={()=>onClick(wine)}
+      onMouseEnter={e=>{e.currentTarget.style.border="1px solid rgba(212,168,67,0.28)";}}
+      onMouseLeave={e=>{e.currentTarget.style.border="1px solid rgba(255,255,255,0.06)";}}
+    >
+      <div style={{position:"absolute",left:0,top:0,width:3,height:"100%",background:colourFor(wine.colour)}}/>
+      <div style={{flex:1,marginLeft:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            <div style={{fontFamily:"Cormorant Garamond",fontSize:16,fontWeight:500,color:"#f0e8d8",lineHeight:1.2}}>{wine.name}{wine.vintage?` ${wine.vintage}`:""}</div>
+            <div style={{fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1,marginTop:2,textTransform:"uppercase"}}>{wine.producer}</div>
+          </div>
+          <div style={{textAlign:"right",marginLeft:8,flexShrink:0}}>
+            <div style={{fontFamily:"Cormorant Garamond",fontSize:15,color:"#d4a843"}}>£{wine.value.toLocaleString()}</div>
+            {wine.qty>1&&<div style={{fontFamily:"Montserrat",fontSize:7,color:"#3a2a1a"}}>×{wine.qty}</div>}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:5,marginTop:5,flexWrap:"wrap"}}>
+          <span style={{fontFamily:"Montserrat",fontSize:7,color:"#7a6a5a",letterSpacing:1,textTransform:"uppercase",background:"rgba(255,255,255,0.04)",padding:"2px 6px",borderRadius:10}}>{wine.grape}</span>
+          <span style={{fontFamily:"Montserrat",fontSize:7,letterSpacing:1,textTransform:"uppercase",padding:"2px 6px",borderRadius:10,background:inW?"rgba(74,222,128,0.09)":toY?"rgba(245,158,11,0.09)":"rgba(239,68,68,0.09)",color:inW?"#4ade80":toY?"#f59e0b":"#ef4444"}}>
+            {inW?"In window":toY?`From ${wine.drinkFrom}`:`Peaked ${wine.drinkUntil}`}
+          </span>
+          <span style={{fontFamily:"Montserrat",fontSize:7,color:"#3a2a1a",padding:"2px 4px"}}>{wine.rack?`Col ${wine.col}·R${wine.row}`:wine.floor?`Floor ${wine.caseSize==="half"?"½":"1"} case`:wine.store}</span>
+        </div>
+      </div>
+      <button onClick={e=>{e.stopPropagation();onConsume(wine);}}
+        style={{background:"rgba(139,38,53,0.12)",border:"1px solid rgba(139,38,53,0.2)",borderRadius:6,padding:"5px 8px",color:"#a05060",fontFamily:"Montserrat",fontSize:9,cursor:"pointer",flexShrink:0,transition:"all 0.13s"}}
+        onMouseEnter={e=>{e.target.style.background="rgba(139,38,53,0.25)";e.target.style.color="#d07080";}}
+        onMouseLeave={e=>{e.target.style.background="rgba(139,38,53,0.12)";e.target.style.color="#a05060";}}>🍷</button>
+    </div>
+  );
+}
+
+// ── Pairing Tab ───────────────────────────────────────────────────────────────
+function PairingTab({ wines }) {
+  const [query,   setQuery]   = useState("");
+  const [results, setResults] = useState([]);
+  const [searched,setSearched]= useState(false);
+
+  const doSearch = (q) => {
+    setQuery(q);
+    if (!q.trim()) { setResults([]); setSearched(false); return; }
+    setResults(searchPairings(q, wines));
+    setSearched(true);
+  };
+
+  const suggestions = ["Roast beef","Roast lamb","Duck","Salmon","Lobster","Scallops","Truffle pasta","Cheese board","Dark chocolate","Celebration","Foie gras","Sushi","Oysters","Sea bass","Venison"];
+
+  return (
+    <div>
+      <div style={{marginBottom:18}}>
+        <h2 style={{fontFamily:"Cormorant Garamond",fontSize:26,fontStyle:"italic",color:"#f0e8d8",marginBottom:2}}>Food Pairings</h2>
+        <p style={{fontFamily:"Montserrat",fontSize:7,color:"#2a1a0e",letterSpacing:2,textTransform:"uppercase"}}>Search a dish to find matching wines from your cellar</p>
+      </div>
+
+      {/* Search input */}
+      <div style={{display:"flex",gap:8,marginBottom:14}}>
+        <input value={query} onChange={e=>doSearch(e.target.value)} placeholder="e.g. roast lamb, lobster, cheese…"
+          style={{flex:1,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:"11px 14px",color:"#c0b090",fontFamily:"Cormorant Garamond",fontSize:16,fontStyle:"italic",outline:"none"}}/>
+        {query&&<button onClick={()=>doSearch("")} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 14px",color:"#6a5a4a",fontFamily:"Montserrat",fontSize:10,cursor:"pointer"}}>✕</button>}
+      </div>
+
+      {/* Quick suggestions */}
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:20}}>
+        {suggestions.map(s=>(
+          <button key={s} onClick={()=>doSearch(s.toLowerCase())}
+            style={{background:query===s.toLowerCase()?"rgba(212,168,67,0.12)":"rgba(255,255,255,0.02)",border:`1px solid ${query===s.toLowerCase()?"rgba(212,168,67,0.3)":"rgba(255,255,255,0.05)"}`,borderRadius:20,padding:"4px 11px",color:query===s.toLowerCase()?"#d4a843":"#3a2a1a",fontFamily:"Montserrat",fontSize:8,letterSpacing:1,cursor:"pointer",transition:"all 0.14s"}}
+            onMouseEnter={e=>{e.target.style.borderColor="rgba(212,168,67,0.2)";e.target.style.color="#7a6050";}}
+            onMouseLeave={e=>{if(query!==s.toLowerCase()){e.target.style.borderColor="rgba(255,255,255,0.05)";e.target.style.color="#3a2a1a";}}}
+          >{s}</button>
+        ))}
+      </div>
+
+      {/* Results */}
+      {searched && results.length===0 && (
+        <div style={{textAlign:"center",padding:"40px 20px"}}>
+          <p style={{fontFamily:"Cormorant Garamond",fontSize:18,fontStyle:"italic",color:"#2a1a0e",lineHeight:1.7}}>No specific pairing found for "{query}".<br/>Try a different dish or browse the suggestions above.</p>
+        </div>
+      )}
+
+      {results.map((r,i)=>(
+        <div key={i} style={{background:"linear-gradient(135deg,rgba(212,168,67,0.04),rgba(255,255,255,0.01))",border:"1px solid rgba(212,168,67,0.1)",borderRadius:12,padding:"18px 18px",marginBottom:14}}>
+          {/* General pairing note */}
+          <p style={{fontFamily:"Cormorant Garamond",fontSize:17,fontStyle:"italic",color:"#c4b490",lineHeight:1.75,marginBottom:14}}>{r.notes}</p>
+
+          {/* Wines from your collection, ranked, with specific notes */}
+          {r.matchedWines.length>0 ? (
+            <div>
+              <p style={{fontFamily:"Montserrat",fontSize:7,color:"#4ade80",letterSpacing:2,textTransform:"uppercase",marginBottom:10}}>
+                ✓ Recommended from your cellar{r.matchedWines.length>1?" — ranked best first":""}
+              </p>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {r.matchedWines.map((w,wi)=>(
+                  <div key={w.id} style={{padding:"12px 14px",background:wi===0?"rgba(212,168,67,0.07)":"rgba(74,222,128,0.04)",border:`1px solid ${wi===0?"rgba(212,168,67,0.2)":"rgba(74,222,128,0.1)"}`,borderRadius:9,position:"relative",overflow:"hidden"}}>
+                    {wi===0&&<div style={{position:"absolute",top:0,left:0,width:"100%",height:2,background:"linear-gradient(90deg,#d4a843,transparent)"}}/>}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:8,flex:1}}>
+                        <div style={{width:3,height:"100%",minHeight:36,background:colourFor(w.colour),borderRadius:2,flexShrink:0,marginTop:2}}/>
+                        <div style={{flex:1}}>
+                          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
+                            {wi===0&&<span style={{fontFamily:"Montserrat",fontSize:7,color:"#d4a843",letterSpacing:1,textTransform:"uppercase",background:"rgba(212,168,67,0.12)",padding:"1px 6px",borderRadius:8}}>Top pick</span>}
+                            <div style={{fontFamily:"Cormorant Garamond",fontSize:16,color:"#f0e8d8"}}>{w.name}{w.vintage?` ${w.vintage}`:""}</div>
+                          </div>
+                          <div style={{fontFamily:"Montserrat",fontSize:7,color:"#5a4a3a",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{w.producer} · {w.grape}</div>
+                          {/* Specific wine pairing note */}
+                          <p style={{fontFamily:"Cormorant Garamond",fontSize:14,fontStyle:"italic",color:"#a09070",lineHeight:1.6,margin:0}}>{wineSpecificNote(w, r)}</p>
+                        </div>
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontFamily:"Cormorant Garamond",fontSize:14,color:"#d4a843"}}>£{w.value.toLocaleString()}</div>
+                        <div style={{fontFamily:"Montserrat",fontSize:7,color:isInWindow(w)?"#4ade80":isTooYoung(w)?"#f59e0b":"#ef4444",letterSpacing:1,marginTop:2}}>
+                          {isInWindow(w)?"● In window":isTooYoung(w)?`From ${w.drinkFrom}`:"Past peak"}
+                        </div>
+                        <div style={{fontFamily:"Montserrat",fontSize:7,color:"#3a2a1a",marginTop:2}}>{w.rack?"Rack":w.floor?"Floor":w.store}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{padding:"12px 14px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8}}>
+              <p style={{fontFamily:"Cormorant Garamond",fontSize:15,fontStyle:"italic",color:"#4a3a2a"}}>No wines from your cellar currently match this pairing — the ideal grape varieties are: {r.grapes.join(", ")}.</p>
+            </div>
+          )}
+
+          {/* Ideal grapes — shown below wines now */}
+          <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+            <p style={{fontFamily:"Montserrat",fontSize:7,color:"#3a2a1a",letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>Ideal grape varieties</p>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {r.grapes.map(g=>(
+                <span key={g} style={{fontFamily:"Montserrat",fontSize:7,color:"#7a6a4a",letterSpacing:1,textTransform:"uppercase",background:"rgba(212,168,67,0.06)",border:"1px solid rgba(212,168,67,0.12)",padding:"2px 8px",borderRadius:10}}>{g}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {!searched && (
+        <div style={{textAlign:"center",padding:"44px 0"}}>
+          <div style={{fontSize:42,color:"rgba(212,168,67,0.07)",marginBottom:12}}>🍽</div>
+          <p style={{fontFamily:"Cormorant Garamond",fontSize:17,fontStyle:"italic",color:"#1a1008",lineHeight:1.7}}>Search a dish above or tap a suggestion to discover which wines from your cellar will elevate the experience.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Cellar App ───────────────────────────────────────────────────────────
+function CellarApp() {
+  const [wines,    setWines]    = useState(loadWines);
+  const [consumed, setConsumed] = useState(loadConsumed);
+  const [tab,      setTab]      = useState("rack");
+  const [selWine,  setSelWine]  = useState(null);
+  const [conWine,  setConWine]  = useState(null);
+  const [showAdd,  setShowAdd]  = useState(false);
+  const [search,   setSearch]   = useState("");
+  const [filters,  setFilters]  = useState({colour:"",grape:"",inWindow:false,location:""});
+  const [sortBy,   setSortBy]   = useState("name");
+
+  // Persist to localStorage on every change
+  useEffect(()=>saveWines(wines),    [wines]);
+  useEffect(()=>saveConsumed(consumed),[consumed]);
+
+  const rackWines  = wines.filter(w=>w.rack);
+  const storeWines = wines.filter(w=>!w.rack&&!w.floor);
+  const floorWines = wines.filter(w=>w.floor);
+  const rackCount  = rackWines.length;
+  const rackFree   = TOTAL_SLOTS - rackCount;
+  const floorBottles = floorWines.reduce((a,w)=>a+(w.caseSize==="half"?6:12),0);
+  const totalVal   = wines.reduce((a,w)=>a+w.value*(w.floor?(w.caseSize==="half"?6:12):w.qty),0);
+  const rackVal    = rackWines.reduce((a,w)=>a+w.value*w.qty,0);
+  const storeVal   = storeWines.reduce((a,w)=>a+w.value*w.qty,0);
+  const avgRating  = consumed.length?(consumed.reduce((a,c)=>a+(c.rating||0),0)/consumed.length).toFixed(1):null;
+
+  const occupiedSlots={};
+  rackWines.forEach(w=>{if(w.col&&w.row)occupiedSlots[`${w.col}-${w.row}`]=true;});
+
+  const grapes  = [...new Set(wines.map(w=>w.grape))].sort();
+  const colours = [...new Set(wines.map(w=>w.colour))].sort();
+
+  const filtered = wines.filter(w=>{
+    const q=search.toLowerCase();
+    const locOk = !filters.location
+      || (filters.location==="rack"   && w.rack)
+      || (filters.location==="store"  && !w.rack&&!w.floor)
+      || (filters.location==="floor"  && w.floor);
+    return (!q||[w.name,w.producer,w.grape].some(s=>s.toLowerCase().includes(q)))
+      &&(!filters.colour||w.colour===filters.colour)
+      &&(!filters.grape||w.grape===filters.grape)
+      &&(!filters.inWindow||isInWindow(w))
+      && locOk;
+  }).sort((a,b)=>sortBy==="name"?a.name.localeCompare(b.name):sortBy==="value"?b.value-a.value:(b.vintage||0)-(a.vintage||0));
+
+  const readyDel=[...storeWines,...floorWines].filter(w=>isInWindow(w)||w.drinkFrom-currentYear<=2).sort((a,b)=>a.drinkFrom-b.drinkFrom);
+
+  const handleAdd=(wine)=>setWines(ws=>[...ws,wine]);
+
+  const handleMove=(id, updates)=>{
+    setWines(ws=>ws.map(w=>w.id===id?{...w,...updates}:w));
+    setSelWine(null);
+  };
+
+  const handleRemove=(id)=>{
+    setWines(ws=>ws.filter(w=>w.id!==id));
+    setSelWine(null);
+  };
+
+  const handleConsumeConfirm=({rating,notes,date})=>{
+    if(!conWine)return;
+    setConsumed(cs=>[...cs,{...conWine,rating,notes,dateConsumed:date,consumedId:genId()}]);
+    setWines(ws=>ws.filter(w=>w.id!==conWine.id));
+    setConWine(null); setSelWine(null);
+  };
+
+  const T=(id)=>({background:"none",border:"none",fontFamily:"Montserrat",fontSize:9,letterSpacing:"2px",textTransform:"uppercase",cursor:"pointer",padding:"10px 11px",transition:"all 0.2s",borderBottom:`2px solid ${tab===id?"#d4a843":"transparent"}`,color:tab===id?"#d4a843":"#3a2a1a",whiteSpace:"nowrap"});
+
+  return (
+    <>
+      <style>{`${FONTS}*{box-sizing:border-box;margin:0;padding:0}html,body{background:#080503;color:#f0e8d8;-webkit-font-smoothing:antialiased}::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:#0d0805}::-webkit-scrollbar-thumb{background:#3a2010;border-radius:2px}input,select,textarea{outline:none}input::placeholder,textarea::placeholder{color:#2a1a0e}.fsel{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);color:#7a6a5a;font-family:Montserrat;font-size:9px;letter-spacing:1px;padding:6px 8px;border-radius:6px;cursor:pointer}.fsel option{background:#140d06}@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+
+      <div style={{minHeight:"100vh",background:"#080503",maxWidth:900,margin:"0 auto",paddingBottom:60}}>
+
+        {/* Header */}
+        <div style={{padding:"20px 16px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+          <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:10}}>
+            <div>
+              <h1 style={{fontFamily:"Cormorant Garamond",fontSize:32,fontWeight:300,fontStyle:"italic",color:"#f0e8d8",letterSpacing:-0.5}}>The Cellar</h1>
+              <p style={{fontFamily:"Montserrat",fontSize:7,color:"#2a1a0e",letterSpacing:3,textTransform:"uppercase",marginTop:2}}>Private Collection</p>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontFamily:"Cormorant Garamond",fontSize:22,color:"#d4a843"}}>£{totalVal.toLocaleString()}</div>
+                <div style={{fontFamily:"Montserrat",fontSize:7,color:"#2a1a0e",letterSpacing:2,textTransform:"uppercase"}}>Portfolio</div>
+              </div>
+              <button onClick={()=>setShowAdd(true)}
+                style={{background:"linear-gradient(135deg,#8B5E2C,#d4a843)",border:"none",borderRadius:9,padding:"10px 15px",color:"#0d0805",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontWeight:600,boxShadow:"0 3px 14px rgba(212,168,67,0.2)",display:"flex",alignItems:"center",gap:5}}>
+                <span style={{fontSize:15,lineHeight:1}}>+</span> Add Wine
+              </button>
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div style={{display:"flex",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+            {[["Rack",`${rackCount}/130`,"#d4a843"],["Rack £",`£${rackVal.toLocaleString()}`,"#d4a843"],["Store",`${storeWines.reduce((a,w)=>a+w.qty,0)} btls`,"#6a5a4a"],["Store £",`£${storeVal.toLocaleString()}`,"#6a5a4a"],["Floor",`${floorBottles} btls`,"#8a7a5a"],["Free",`${rackFree}`,"#4ade80"],["Ready",`${wines.filter(isInWindow).length}`,"#4ade80"],["Consumed",`${consumed.length}${avgRating?" · "+avgRating+"★":""}`,"#c06070"]].map(([l,v,c])=>(
+              <div key={l} style={{display:"flex",alignItems:"center",gap:5}}>
+                <div style={{width:2,height:18,background:c,borderRadius:1,opacity:0.6}}/>
+                <div>
+                  <div style={{fontFamily:"Montserrat",fontSize:7,color:"#2a1a0e",textTransform:"uppercase",letterSpacing:1.5}}>{l}</div>
+                  <div style={{fontFamily:"Cormorant Garamond",fontSize:12,color:"#907a5a"}}>{v}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{display:"flex",overflowX:"auto",gap:0}}>
+            {[["rack","Wine Rack"],["collection","Collection"],["stores","Stores"],["pairing","Pairings"],["consumed","Tasting Log"]].map(([id,label])=>(
+              <button key={id} style={T(id)} onClick={()=>setTab(id)}>{label}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{padding:"18px 16px"}}>
+
+          {/* RACK */}
+          {tab==="rack"&&(
+            <div>
+              <WineRack wines={wines} onSelect={setSelWine} selectedWine={selWine}/>
+              {selWine&&(
+                <div style={{marginTop:12,background:"linear-gradient(135deg,rgba(212,168,67,0.05),rgba(255,255,255,0.01))",border:"1px solid rgba(212,168,67,0.14)",borderRadius:10,padding:"13px 14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                    <div>
+                      <h3 style={{fontFamily:"Cormorant Garamond",fontSize:18,fontStyle:"italic",color:"#f0e8d8",marginBottom:2}}>{selWine.name}{selWine.vintage?` ${selWine.vintage}`:""}</h3>
+                      <p style={{fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1,textTransform:"uppercase"}}>{selWine.producer} · {selWine.grape}</p>
+                      <div style={{display:"flex",gap:9,marginTop:5}}>
+                        <span style={{fontFamily:"Montserrat",fontSize:8,color:"#d4a843"}}>£{selWine.value.toLocaleString()}</span>
+                        <span style={{fontFamily:"Montserrat",fontSize:8,color:isInWindow(selWine)?"#4ade80":isTooYoung(selWine)?"#f59e0b":"#ef4444"}}>{isInWindow(selWine)?"✓ In window":isTooYoung(selWine)?`Ready ${selWine.drinkFrom}`:"Past peak"}</span>
+                        <span style={{fontFamily:"Montserrat",fontSize:8,color:"#3a2a1a"}}>Col {selWine.col} · Row {selWine.row}</span>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:7,flexShrink:0}}>
+                      <button onClick={()=>setConWine(selWine)} style={{background:"rgba(139,38,53,0.14)",border:"1px solid rgba(139,38,53,0.25)",borderRadius:7,padding:"7px 11px",color:"#c06070",fontFamily:"Montserrat",fontSize:7,cursor:"pointer",letterSpacing:1,textTransform:"uppercase"}}>🍷</button>
+                      <button onClick={()=>setSelWine(null)} style={{background:"none",border:"none",color:"#3a2a1a",cursor:"pointer",fontSize:17}}>✕</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* COLLECTION */}
+          {tab==="collection"&&(
+            <div>
+              <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+                <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search wines, producers, grapes…"
+                  style={{flex:1,minWidth:140,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:7,padding:"8px 12px",color:"#c0b090",fontFamily:"Cormorant Garamond",fontSize:15}}/>
+                <select className="fsel" value={filters.colour} onChange={e=>setFilters(f=>({...f,colour:e.target.value}))}>
+                  <option value="">All colours</option>{colours.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+                <select className="fsel" value={filters.grape} onChange={e=>setFilters(f=>({...f,grape:e.target.value}))}>
+                  <option value="">All grapes</option>{grapes.map(g=><option key={g} value={g}>{g}</option>)}
+                </select>
+                <select className="fsel" value={filters.location} onChange={e=>setFilters(f=>({...f,location:e.target.value}))}>
+                  <option value="">All</option><option value="rack">Rack</option><option value="store">Store</option><option value="floor">Floor</option>
+                </select>
+                <select className="fsel" value={sortBy} onChange={e=>setSortBy(e.target.value)}>
+                  <option value="name">Name</option><option value="value">Value ↓</option><option value="vintage">Vintage ↓</option>
+                </select>
+                <label style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1,textTransform:"uppercase"}}>
+                  <input type="checkbox" checked={filters.inWindow} onChange={e=>setFilters(f=>({...f,inWindow:e.target.checked}))}/> Ready
+                </label>
+              </div>
+              <div style={{fontFamily:"Montserrat",fontSize:7,color:"#2a1a0e",letterSpacing:1,textTransform:"uppercase",marginBottom:7}}>
+                {filtered.length} wine{filtered.length!==1?"s":""} · £{filtered.reduce((a,w)=>a+w.value*w.qty,0).toLocaleString()}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                {filtered.map(w=><WineCard key={w.id} wine={w} onClick={setSelWine} onConsume={setConWine}/>)}
+                {!filtered.length&&<p style={{fontFamily:"Cormorant Garamond",fontSize:17,fontStyle:"italic",color:"#2a1a0e",textAlign:"center",marginTop:36}}>No wines match.</p>}
+              </div>
+            </div>
+          )}
+
+          {/* STORES */}
+          {tab==="stores"&&(
+            <div>
+              {readyDel.length>0&&(
+                <div style={{background:"linear-gradient(135deg,rgba(212,168,67,0.05),rgba(255,255,255,0.01))",border:"1px solid rgba(212,168,67,0.11)",borderRadius:11,padding:16,marginBottom:18}}>
+                  <h3 style={{fontFamily:"Cormorant Garamond",fontSize:19,fontStyle:"italic",color:"#d4a843",marginBottom:4}}>Delivery Recommendations</h3>
+                  <p style={{fontFamily:"Montserrat",fontSize:7,color:"#3a2a1a",letterSpacing:1,textTransform:"uppercase",marginBottom:11}}>{rackFree} rack slot{rackFree!==1?"s":""} available</p>
+                  {readyDel.slice(0,5).map(w=>(
+                    <div key={w.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                      <div>
+                        <div style={{fontFamily:"Cormorant Garamond",fontSize:15,color:"#f0e8d8"}}>{w.name}{w.vintage?` ${w.vintage}`:""}</div>
+                        <div style={{fontFamily:"Montserrat",fontSize:7,color:"#3a2a1a",letterSpacing:1,textTransform:"uppercase",marginTop:1}}>{w.floor?"Floor":w.store} · {w.floor?(w.caseSize==="half"?"6 btls":"12 btls"):w.qty+" btl"+(w.qty!==1?"s":"")}</div>
+                      </div>
+                      <div style={{fontFamily:"Montserrat",fontSize:7,color:isInWindow(w)?"#4ade80":"#f59e0b",letterSpacing:1,textTransform:"uppercase"}}>{isInWindow(w)?"Now":`By ${w.drinkFrom}`}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {["Berry Bros & Rudd","The Wine Society"].map(store=>{
+                const sw=storeWines.filter(w=>w.store===store);
+                if(!sw.length)return null;
+                return (
+                  <div key={store} style={{marginBottom:20}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
+                      <h3 style={{fontFamily:"Cormorant Garamond",fontSize:19,fontStyle:"italic",color:"#b0a080"}}>{store}</h3>
+                      <span style={{fontFamily:"Cormorant Garamond",fontSize:14,color:"#d4a843"}}>£{sw.reduce((a,w)=>a+w.value*w.qty,0).toLocaleString()}</span>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:5}}>{sw.map(w=><WineCard key={w.id} wine={w} onClick={setSelWine} onConsume={setConWine}/>)}</div>
+                  </div>
+                );
+              })}
+              {floorWines.length>0&&(
+                <div style={{marginBottom:20}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
+                    <h3 style={{fontFamily:"Cormorant Garamond",fontSize:19,fontStyle:"italic",color:"#b0a080"}}>📦 Floor Stock</h3>
+                    <span style={{fontFamily:"Cormorant Garamond",fontSize:14,color:"#d4a843"}}>£{floorWines.reduce((a,w)=>a+w.value*(w.caseSize==="half"?6:12),0).toLocaleString()}</span>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                    {floorWines.map(w=>(
+                      <div key={w.id} style={{background:"linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"11px 13px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}
+                        onClick={()=>setSelWine(w)}>
+                        <div style={{position:"absolute",left:0,top:0,width:3,height:"100%",background:colourFor(w.colour)}}/>
+                        <div style={{flex:1,marginLeft:4}}>
+                          <div style={{fontFamily:"Cormorant Garamond",fontSize:15,color:"#f0e8d8"}}>{w.name}{w.vintage?` ${w.vintage}`:""}</div>
+                          <div style={{fontFamily:"Montserrat",fontSize:7,color:"#5a4a3a",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>{w.producer} · {w.caseSize==="half"?"Half case (6)":"Full case (12)"}</div>
+                          <div style={{display:"flex",gap:6,marginTop:4}}>
+                            <span style={{fontFamily:"Montserrat",fontSize:7,color:"#7a6a5a",letterSpacing:1,textTransform:"uppercase",background:"rgba(255,255,255,0.04)",padding:"2px 6px",borderRadius:10}}>{w.grape}</span>
+                            <span style={{fontFamily:"Montserrat",fontSize:7,color:isInWindow(w)?"#4ade80":isTooYoung(w)?"#f59e0b":"#ef4444",padding:"2px 4px"}}>{isInWindow(w)?"In window":isTooYoung(w)?`From ${w.drinkFrom}`:`Peaked`}</span>
+                          </div>
+                        </div>
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontFamily:"Cormorant Garamond",fontSize:15,color:"#d4a843"}}>£{(w.value*(w.caseSize==="half"?6:12)).toLocaleString()}</div>
+                          <div style={{fontFamily:"Montserrat",fontSize:7,color:"#4a3a2a",marginTop:2}}>£{w.value}/btl</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PAIRINGS */}
+          {tab==="pairing"&&<PairingTab wines={wines}/>}
+
+          {/* TASTING LOG */}
+          {tab==="consumed"&&(
+            <div>
+              <div style={{marginBottom:18}}>
+                <h2 style={{fontFamily:"Cormorant Garamond",fontSize:26,fontStyle:"italic",color:"#f0e8d8",marginBottom:2}}>Tasting Log</h2>
+                <p style={{fontFamily:"Montserrat",fontSize:7,color:"#2a1a0e",letterSpacing:2,textTransform:"uppercase"}}>{consumed.length} bottle{consumed.length!==1?"s":""}{avgRating?` · avg ${avgRating} ★`:""}</p>
+              </div>
+              {consumed.length===0?(
+                <div style={{textAlign:"center",padding:"55px 20px"}}>
+                  <div style={{fontSize:44,color:"rgba(212,168,67,0.07)",marginBottom:12}}>🍷</div>
+                  <p style={{fontFamily:"Cormorant Garamond",fontSize:17,fontStyle:"italic",color:"#2a1a0e",lineHeight:1.7}}>Your tasting log awaits.<br/>Mark wines as consumed to build your history.</p>
+                </div>
+              ):(
+                <div style={{display:"flex",flexDirection:"column",gap:9}}>
+                  {[...consumed].reverse().map(w=>(
+                    <div key={w.consumedId} style={{background:"linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"13px 15px",position:"relative",overflow:"hidden"}}>
+                      <div style={{position:"absolute",left:0,top:0,width:3,height:"100%",background:colourFor(w.colour)}}/>
+                      <div style={{marginLeft:10}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+                          <div>
+                            <div style={{fontFamily:"Cormorant Garamond",fontSize:17,fontStyle:"italic",color:"#f0e8d8",lineHeight:1.2}}>{w.name}{w.vintage?` ${w.vintage}`:""}</div>
+                            <div style={{fontFamily:"Montserrat",fontSize:7,color:"#3a2a1a",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>{w.producer}</div>
+                          </div>
+                          <div style={{textAlign:"right",flexShrink:0}}>
+                            {w.rating>0&&<Stars value={w.rating} size={12}/>}
+                            <div style={{fontFamily:"Montserrat",fontSize:7,color:"#2a1a0e",letterSpacing:1,marginTop:2}}>{w.dateConsumed}</div>
+                          </div>
+                        </div>
+                        {w.notes&&<p style={{fontFamily:"Cormorant Garamond",fontSize:14,fontStyle:"italic",color:"#6a5a4a",marginTop:8,lineHeight:1.6,borderTop:"1px solid rgba(255,255,255,0.04)",paddingTop:8}}>{w.notes}</p>}
+                        <div style={{display:"flex",gap:5,marginTop:6}}>
+                          <span style={{fontFamily:"Montserrat",fontSize:7,color:"#5a4a3a",letterSpacing:1,textTransform:"uppercase",background:"rgba(255,255,255,0.03)",padding:"2px 6px",borderRadius:10}}>{w.grape}</span>
+                          <span style={{fontFamily:"Montserrat",fontSize:7,color:"#4a3a2a"}}>£{w.value.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showAdd&&<AddWineModal onClose={()=>setShowAdd(false)} onAdd={handleAdd} occupiedSlots={occupiedSlots}/>}
+      {selWine&&<WineDetail wine={{...selWine,_occupiedSlots:occupiedSlots}} onClose={()=>setSelWine(null)} onConsume={setConWine} onMove={handleMove} onRemove={handleRemove}/>}
+      {conWine&&<ConsumeModal wine={conWine} onClose={()=>setConWine(null)} onConfirm={handleConsumeConfirm}/>}
+    </>
+  );
+}
+
+// ── Root ──────────────────────────────────────────────────────────────────────
+function App() {
+  const [unlocked, setUnlocked] = useState(false);
+  if (!unlocked) return <PasswordGate onUnlock={()=>setUnlocked(true)}/>;
+  return <CellarApp/>;
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>
