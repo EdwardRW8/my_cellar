@@ -296,6 +296,9 @@ function AddWineModal({ onClose, onAdd, occupiedSlots }) {
   const [location, setLocation] = useState("rack");
   const [store, setStore]       = useState("Berry Bros & Rudd");
   const [caseSize, setCaseSize] = useState("case");
+  const [bottleSize, setBottleSize] = useState("750ml");
+  const [country, setCountry]   = useState("");
+  const [region,  setRegion]    = useState("");
 
   // ── Step 2 state: per-bottle locations ───────────────────────────────────
   // Array of {col, row} for rack bottles — pre-filled with auto-suggestions
@@ -335,6 +338,9 @@ function AddWineModal({ onClose, onAdd, occupiedSlots }) {
       value:   parseFloat(value),
       drinkFrom: parseInt(drinkFrom),
       drinkUntil: parseInt(drinkUntil),
+      bottleSize,
+      country,
+      region,
     };
     if (location === "rack") {
       // Add one wine record per bottle
@@ -390,9 +396,17 @@ function AddWineModal({ onClose, onAdd, occupiedSlots }) {
                   {["Red","White","Sparkling","Rosé","Dessert"].map(c=><option key={c} style={{background:"#140d06"}}>{c}</option>)}
                 </select>
               </div>
+              <div>
+                <label style={lbl}>Bottle Size</label>
+                <select style={sel} value={bottleSize} onChange={e=>setBottleSize(e.target.value)}>
+                  {["375ml","750ml","1500ml","3000ml"].map(s=><option key={s} style={{background:"#140d06"}}>{s}</option>)}
+                </select>
+              </div>
               <div><label style={lbl}>Value £ *</label><input style={inp} type="number" value={value} onChange={e=>setValue(e.target.value)} placeholder="150"/></div>
               <div><label style={lbl}>Drink From *</label><input style={inp} type="number" value={drinkFrom} onChange={e=>setDrinkFrom(e.target.value)} placeholder="2024"/></div>
               <div><label style={lbl}>Drink Until *</label><input style={inp} type="number" value={drinkUntil} onChange={e=>setDrinkUntil(e.target.value)} placeholder="2040"/></div>
+              <div style={{gridColumn:"1/-1"}}><label style={lbl}>Country</label><input style={inp} value={country} onChange={e=>setCountry(e.target.value)} placeholder="e.g. France"/></div>
+              <div style={{gridColumn:"1/-1"}}><label style={lbl}>Region / Appellation</label><input style={inp} value={region} onChange={e=>setRegion(e.target.value)} placeholder="e.g. Pauillac, Bordeaux"/></div>
             </div>
 
             <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
@@ -628,6 +642,86 @@ function MoveModal({ wine, onClose, onMove, occupiedSlots }) {
   );
 }
 
+// ── Edit Wine Modal ───────────────────────────────────────────────────────────
+function EditModal({ wine, onClose, onSave }) {
+  const [form, setForm] = useState({
+    name:      wine.name,
+    producer:  wine.producer,
+    grape:     wine.grape,
+    colour:    wine.colour,
+    vintage:   wine.vintage ?? "",
+    value:     wine.value,
+    drinkFrom: wine.drinkFrom,
+    drinkUntil:wine.drinkUntil,
+    bottleSize:wine.bottleSize || "750ml",
+    country:   wine.country || "",
+    region:    wine.region  || "",
+  });
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const inp = {width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"10px 12px",color:"#d4c4a0",fontFamily:"Cormorant Garamond",fontSize:15,outline:"none"};
+  const sel = {...inp,fontFamily:"Montserrat",fontSize:10,cursor:"pointer",padding:"9px 11px"};
+  const lbl = {fontFamily:"Montserrat",fontSize:8,color:"#5a4a3a",letterSpacing:1.5,textTransform:"uppercase",display:"block",marginBottom:5};
+
+  const handleSave = () => {
+    onSave(wine.id, {
+      name:       form.name,
+      producer:   form.producer,
+      grape:      form.grape,
+      colour:     form.colour,
+      vintage:    form.vintage !== "" ? parseInt(form.vintage) : null,
+      value:      parseFloat(form.value) || wine.value,
+      drinkFrom:  parseInt(form.drinkFrom) || wine.drinkFrom,
+      drinkUntil: parseInt(form.drinkUntil) || wine.drinkUntil,
+      bottleSize: form.bottleSize,
+      country:    form.country,
+      region:     form.region,
+    });
+    onClose();
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.9)",zIndex:5000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(14px)"}} onClick={onClose}>
+      <div style={{background:"linear-gradient(160deg,#140d06,#0d0805)",border:"1px solid rgba(212,168,67,0.2)",borderRadius:18,padding:24,width:"min(480px,96vw)",maxHeight:"94vh",overflowY:"auto",position:"relative"}} onClick={e=>e.stopPropagation()}>
+        <button onClick={onClose} style={{position:"absolute",top:14,right:16,background:"none",border:"none",color:"#4a3a2a",cursor:"pointer",fontSize:22}}>✕</button>
+        <p style={{fontFamily:"Montserrat",fontSize:8,color:"#4a3a2a",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Editing</p>
+        <h2 style={{fontFamily:"Cormorant Garamond",fontSize:24,fontStyle:"italic",color:"#f0e8d8",fontWeight:400,marginBottom:18}}>{wine.name}</h2>
+
+        <div style={{display:"flex",flexDirection:"column",gap:11}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div style={{gridColumn:"1/-1"}}><label style={lbl}>Wine Name</label><input style={inp} value={form.name} onChange={e=>set("name",e.target.value)}/></div>
+            <div style={{gridColumn:"1/-1"}}><label style={lbl}>Producer</label><input style={inp} value={form.producer} onChange={e=>set("producer",e.target.value)}/></div>
+            <div style={{gridColumn:"1/-1"}}><label style={lbl}>Grape(s)</label><input style={inp} value={form.grape} onChange={e=>set("grape",e.target.value)}/></div>
+            <div>
+              <label style={lbl}>Colour</label>
+              <select style={sel} value={form.colour} onChange={e=>set("colour",e.target.value)}>
+                {["Red","White","Sparkling","Rosé","Dessert"].map(c=><option key={c} style={{background:"#140d06"}}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Bottle Size</label>
+              <select style={sel} value={form.bottleSize} onChange={e=>set("bottleSize",e.target.value)}>
+                {["375ml","750ml","1500ml","3000ml"].map(s=><option key={s} style={{background:"#140d06"}}>{s}</option>)}
+              </select>
+            </div>
+            <div><label style={lbl}>Vintage</label><input style={inp} type="number" value={form.vintage} onChange={e=>set("vintage",e.target.value)} placeholder="2018"/></div>
+            <div><label style={lbl}>Value £</label><input style={inp} type="number" value={form.value} onChange={e=>set("value",e.target.value)}/></div>
+            <div><label style={lbl}>Drink From</label><input style={inp} type="number" value={form.drinkFrom} onChange={e=>set("drinkFrom",e.target.value)}/></div>
+            <div><label style={lbl}>Drink Until</label><input style={inp} type="number" value={form.drinkUntil} onChange={e=>set("drinkUntil",e.target.value)}/></div>
+            <div style={{gridColumn:"1/-1"}}><label style={lbl}>Country</label><input style={inp} value={form.country} onChange={e=>set("country",e.target.value)} placeholder="e.g. France"/></div>
+            <div style={{gridColumn:"1/-1"}}><label style={lbl}>Region / Appellation</label><input style={inp} value={form.region} onChange={e=>set("region",e.target.value)} placeholder="e.g. Pauillac, Bordeaux"/></div>
+          </div>
+
+          <div style={{display:"flex",gap:8,marginTop:4}}>
+            <button onClick={onClose} style={{flex:1,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"12px",color:"#6a5a4a",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer"}}>Cancel</button>
+            <button onClick={handleSave} style={{flex:2,background:"linear-gradient(135deg,#8B5E2C,#d4a843)",border:"none",borderRadius:9,padding:"12px",color:"#0d0805",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontWeight:600}}>Save Changes ✓</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Remove (non-consumed) confirm modal ───────────────────────────────────────
 function RemoveModal({ wine, onClose, onRemove }) {
   const [reason, setReason] = useState("gift");
@@ -657,11 +751,11 @@ function RemoveModal({ wine, onClose, onRemove }) {
 }
 
 // ── Wine Detail Modal ─────────────────────────────────────────────────────────
-function WineDetail({ wine, onClose, onConsume, onMove, onRemove }) {
+function WineDetail({ wine, onClose, onConsume, onMove, onRemove, onEdit }) {
   const [showMove,   setShowMove]   = useState(false);
   const [showRemove, setShowRemove] = useState(false);
+  const [showEdit,   setShowEdit]   = useState(false);
 
-  // need to pass occupiedSlots down — derive from parent via prop
   const inW = isInWindow(wine), toY = isTooYoung(wine);
   const pct = Math.max(0,Math.min(100,((currentYear-wine.drinkFrom)/Math.max(1,wine.drinkUntil-wine.drinkFrom))*100));
 
@@ -670,6 +764,19 @@ function WineDetail({ wine, onClose, onConsume, onMove, onRemove }) {
     : wine.floor
     ? `Floor — ${wine.caseSize==="half"?"Half case (6)":"Full case (12)"}`
     : wine.store;
+
+  const details = [
+    ["Grape",       wine.grape],
+    ["Colour",      wine.colour],
+    ["Bottle Size", wine.bottleSize || "750ml"],
+    ["Value",       `£${wine.value.toLocaleString()}`],
+    ["Bottles",     wine.floor?(wine.caseSize==="half"?6:12):wine.qty],
+    ["Drink from",  wine.drinkFrom],
+    ["Drink until", wine.drinkUntil],
+    ["Country",     wine.country  || "—"],
+    ["Region",      wine.region   || "—"],
+    ["Location",    locationLabel],
+  ];
 
   return (
     <>
@@ -685,7 +792,7 @@ function WineDetail({ wine, onClose, onConsume, onMove, onRemove }) {
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:12}}>
-          {[["Grape",wine.grape],["Colour",wine.colour],["Value",`£${wine.value.toLocaleString()}`],["Bottles",wine.floor?(wine.caseSize==="half"?6:12):wine.qty],["Drink from",wine.drinkFrom],["Drink until",wine.drinkUntil],["Location",locationLabel]].map(([k,v])=>(
+          {details.map(([k,v])=>(
             <div key={k} style={{borderBottom:"1px solid rgba(255,255,255,0.05)",paddingBottom:7}}>
               <div style={{fontFamily:"Montserrat",fontSize:7,color:"#3a2a1a",textTransform:"uppercase",letterSpacing:1.5}}>{k}</div>
               <div style={{fontFamily:"Cormorant Garamond",fontSize:14,color:"#b0a070",marginTop:2}}>{v}</div>
@@ -713,6 +820,10 @@ function WineDetail({ wine, onClose, onConsume, onMove, onRemove }) {
             🍷 I Consumed This Wine
           </button>
           <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setShowEdit(true)}
+              style={{flex:1,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"11px",color:"#c0b090",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontWeight:600}}>
+              ✎ Edit
+            </button>
             <button onClick={()=>setShowMove(true)}
               style={{flex:1,background:"rgba(212,168,67,0.08)",border:"1px solid rgba(212,168,67,0.2)",borderRadius:10,padding:"11px",color:"#d4a843",fontFamily:"Montserrat",fontSize:8,letterSpacing:2,textTransform:"uppercase",cursor:"pointer",fontWeight:600}}>
               ↔ Move
@@ -725,7 +836,8 @@ function WineDetail({ wine, onClose, onConsume, onMove, onRemove }) {
         </div>
       </div>
     </div>
-    {showMove   && <MoveModal   wine={wine} onClose={()=>setShowMove(false)}   onMove={onMove}     occupiedSlots={wine._occupiedSlots||{}}/>}
+    {showEdit   && <EditModal   wine={wine} onClose={()=>setShowEdit(false)}   onSave={onEdit}/>}
+    {showMove   && <MoveModal   wine={wine} onClose={()=>setShowMove(false)}   onMove={onMove}   occupiedSlots={wine._occupiedSlots||{}}/>}
     {showRemove && <RemoveModal wine={wine} onClose={()=>setShowRemove(false)} onRemove={onRemove}/>}
     </>
   );
@@ -1032,6 +1144,11 @@ function CellarApp() {
 
   const handleAdd=(wine)=>setWines(ws=>[...ws,wine]);
 
+  const handleEdit=(id, updates)=>{
+    setWines(ws=>ws.map(w=>w.id===id?{...w,...updates}:w));
+    setSelWine(null);
+  };
+
   const handleMove=(id, updates)=>{
     setWines(ws=>ws.map(w=>w.id===id?{...w,...updates}:w));
     setSelWine(null);
@@ -1265,7 +1382,7 @@ function CellarApp() {
       </div>
 
       {showAdd&&<AddWineModal onClose={()=>setShowAdd(false)} onAdd={handleAdd} occupiedSlots={occupiedSlots}/>}
-      {selWine&&<WineDetail wine={{...selWine,_occupiedSlots:occupiedSlots}} onClose={()=>setSelWine(null)} onConsume={setConWine} onMove={handleMove} onRemove={handleRemove}/>}
+      {selWine&&<WineDetail wine={{...selWine,_occupiedSlots:occupiedSlots}} onClose={()=>setSelWine(null)} onConsume={setConWine} onMove={handleMove} onRemove={handleRemove} onEdit={handleEdit}/>}
       {conWine&&<ConsumeModal wine={conWine} onClose={()=>setConWine(null)} onConfirm={handleConsumeConfirm}/>}
     </>
   );
